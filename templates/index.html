@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Skills Assessment Platform</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="no-copy" oncontextmenu="return false" onselectstart="return false" ondragstart="return false">
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <a href="/">
+                    <img src="/Assets/Screenshot 2025-08-01 092513.png" alt="SMARRTIFAI" class="logo">
+                </a>
+            </div>
+            <div class="nav-steps">
+                <div class="step active" id="step-1"><span>1</span> Upload</div>
+                <div class="step" id="step-2"><span>2</span> Assess</div>
+                <div class="step" id="step-3"><span>3</span> Results</div>
+                <div class="step" id="step-4"><span>4</span> Roadmap</div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <!-- Onboarding Section -->
+        <div id="onboarding-section" class="onboarding-section">
+            <div class="onboarding-content">
+                <div class="chat-container">
+                    <div class="chat-messages" id="chatMessages">
+                        <div class="message bot-message">
+                            <div class="message-content">
+                                <span class="bot-avatar">🤖</span>
+                                <p>Hi! 👋 I'm here to help you start your tech journey. What's your current situation?</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="chat-options" id="chatOptions">
+                        <button class="option-btn" onclick="handleOnboardingResponse(0, 'I\'m new to tech')">I'm new to tech</button>
+                        <button class="option-btn" onclick="handleOnboardingResponse(0, 'I have some basic knowledge about tech')">I have some basic knowledge about tech</button>
+                        <button class="option-btn" onclick="handleOnboardingResponse(0, 'I\'m looking to switch career')">I'm looking to switch career</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- AI Mentor Section -->
+        <div id="mentor-section" class="mentor-section hidden">
+            <div class="mentor-container">
+                <h3>💬 Ask Your AI Career Mentor</h3>
+                <div class="mentor-chat">
+                    <input type="text" id="mentorInput" placeholder="Ask about career paths, learning strategies, or job hunting..." onkeypress="if(event.key==='Enter') askMentor()" />
+                    <button onclick="askMentor()">Ask</button>
+                </div>
+                <div class="mentor-response" id="mentorResponse"></div>
+            </div>
+        </div>
+
+        <!-- Hero Section -->
+        <div class="hero-section hidden">
+            <div class="hero-content">
+                <h1><i class="fas fa-rocket"></i> Transform Your Career Journey</h1>
+                <p>AI-powered skills assessment with personalized career roadmaps</p>
+                <div class="hero-stats">
+                    <div class="stat"><span class="stat-number">10K+</span><span class="stat-label">Assessments</span></div>
+                    <div class="stat"><span class="stat-number">95%</span><span class="stat-label">Accuracy</span></div>
+                    <div class="stat"><span class="stat-number">5</span><span class="stat-label">Tech Fields</span></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 1: Resume Upload -->
+        <div id="upload-section" class="section-card hidden">
+            <div class="section-header">
+                <div class="section-icon"><i class="fas fa-file-upload"></i></div>
+                <h2>Upload Your Resume</h2>
+                <p>Drag & drop or click to upload your resume for AI analysis</p>
+            </div>
+            <div class="upload-area" id="upload-area">
+                <div class="upload-content">
+                    <i class="fas fa-cloud-upload-alt"></i>
+                    <h3>Drop your resume here</h3>
+                    <p>or <span class="upload-link">browse files</span></p>
+                    <small>Supports PDF, DOC, DOCX (Max 16MB)</small>
+                </div>
+                <input type="file" id="resume-file" accept=".pdf,.doc,.docx" hidden>
+            </div>
+            <div class="upload-actions">
+                <button class="btn-primary" onclick="uploadResume()">
+                    <i class="fas fa-brain"></i> Analyze Resume
+                </button>
+            </div>
+            <div id="upload-status" class="status-area"></div>
+        </div>
+
+        <!-- Rules and Regulations Section -->
+        <div id="rules-section" class="section-card hidden">
+            <div class="section-header">
+                <div class="section-icon"><i class="fas fa-scroll"></i></div>
+                <h2>Exam Rules & Instructions</h2>
+                <p>Please read the following instructions carefully before you begin.</p>
+            </div>
+            <div class="rules-content">
+                <h3>Interface Features</h3>
+                <ul>
+                    <li><strong>Progress Dashboard:</strong> See your overall progress at a glance.</li>
+                    <li><strong>Attempt Tracker:</strong> Keep track of which questions you have answered.</li>
+                    <li><strong>Question Status Panel:</strong> Review and navigate to any question easily.</li>
+                    <li><strong>Quiz Progress Bar:</strong> A visual indicator of your completion percentage.</li>
+                    <li><strong>Exam Navigator:</strong> Buttons to move between questions or review your answers.</li>
+                </ul>
+                <h3>General Regulations</h3>
+                <ul>
+                    <li>This is a timed assessment. The timer will start as soon as you click "Start Assessment".</li>
+                    <li>Do not switch tabs or open other applications. Doing so may result in test termination.</li>
+                    <li>Ensure you have a stable internet connection.</li>
+                    <li>All questions must be answered before final submission.</li>
+                </ul>
+            </div>
+            <div class="rules-actions"><button class="btn-primary" onclick="startAssessmentFromRules()"><i class="fas fa-play-circle"></i> Start Assessment</button></div>
+        </div>
+
+        <!-- Timer -->
+        <div id="timer-container" class="timer-widget hidden">
+            <div class="timer-content">
+                <i class="fas fa-clock"></i>
+                <div class="timer-info">
+                    <div id="timer-display">10:00</div>
+                    <span>Time Remaining</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Warning Modal -->
+        <div id="warning-modal" class="modal-overlay hidden">
+            <div class="modal-content warning-modal">
+                <div class="modal-icon warning">
+                    <i class="fas fa-exclamation-triangle"></i>
+                </div>
+                <h3>Security Alert</h3>
+                <p>Tab switching detected during assessment. This is your <strong>first warning</strong>.</p>
+                <p class="warning-text">Another violation will terminate your test session.</p>
+                <div class="modal-actions">
+                    <button class="btn-danger" onclick="closeWarning()">
+                        <i class="fas fa-shield-alt"></i> Continue Securely
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 2: Skills Assessment -->
+        <div id="assessment-section" class="section-card hidden">
+            <div class="assessment-header">
+                <div class="assessment-info">
+                    <h2><i class="fas fa-brain"></i> Skills Assessment</h2>
+                    <div class="question-meta">
+                        <div class="question-counter" id="question-counter">Question 1 of 10</div>
+                        <div class="difficulty-badge">Adaptive</div>
+                    </div>
+                </div>
+                <div class="progress-section">
+                    <div class="progress-info">
+                        <span>Progress</span>
+                        <span id="progress-text">0%</span>
+                    </div>
+                    <div class="progress">
+                        <div id="progress-bar" class="progress-bar" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+            <div id="skills-found" class="skills-display"></div>
+            <div id="questions-container" class="questions-area"></div>
+            <div class="assessment-actions">
+                <button class="btn-secondary hidden" id="prev-question" onclick="prevQuestion()">
+                    <i class="fas fa-arrow-left"></i> Previous
+                </button>
+                <button class="btn-secondary hidden" id="back-to-assessment-btn" onclick="backToAssessment()">
+                    <i class="fas fa-pencil-alt"></i> Back to Question
+                </button>
+                <button class="btn-primary hidden" id="next-question" onclick="nextQuestion()">
+                    Next <i class="fas fa-arrow-right"></i>
+                </button>
+                <button class="btn-primary hidden" id="submit-assessment" onclick="submitAssessment()">
+                    <i class="fas fa-check-circle"></i> Submit Assessment
+                </button>
+            </div>
+        </div>
+
+        <!-- Step 3: Results -->
+        <div id="results-section" class="section-card hidden">
+            <div class="results-header">
+                <h2><i class="fas fa-chart-line"></i> Assessment Results</h2>
+            </div>
+            <div id="results-content" class="results-display"></div>
+            <div class="field-selection">
+                <h3>Choose Your Career Path</h3>
+                <div class="field-grid" id="field-grid"></div>
+            </div>
+            <div class="results-actions">
+                <button class="btn-primary" onclick="generateRoadmap()">
+                    <i class="fas fa-route"></i> Generate Roadmap
+                </button>
+            </div>
+        </div>
+
+        <!-- Step 4: Roadmap -->
+        <div id="roadmap-section" class="section-card hidden">
+            <div class="roadmap-header">
+                <h2><i class="fas fa-map-marked-alt"></i> Your Career Roadmap</h2>
+                <p>Personalized learning path based on your skills and goals</p>
+            </div>
+            <div id="roadmap-content-wrapper">
+                <div id="roadmap-content" class="roadmap-display"></div>
+                <div id="roadmap-lock-overlay" class="hidden">
+                    <div class="lock-content">
+                        <i class="fas fa-lock"></i>
+                        <h3>Unlock Your Full Career Roadmap</h3>
+                        <p>Subscribe to our Pro plan to view and download your detailed career path.</p>
+                        <button class="btn-primary" onclick="unlockRoadmap()">Subscribe to Unlock</button>
+                    </div>
+                </div>
+            </div>
+            <div class="roadmap-actions">
+                <button class="btn-primary" id="download-roadmap-btn" onclick="downloadRoadmap()" disabled>
+                    <i class="fas fa-download"></i> Download Roadmap
+                </button>
+                <button class="btn-secondary" onclick="shareRoadmap()">
+                    <i class="fas fa-share-alt"></i> Share
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay hidden">
+        <div class="loading-content">
+            <div class="loading-spinner"></div>
+            <h3>Analyzing Your Skills...</h3>
+            <p>Please wait while we process your resume</p>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
