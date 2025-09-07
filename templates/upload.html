@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upload Resume - Skills Assessment Platform</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <a href="/">
+                    <img src="/Assets/Screenshot 2025-08-01 092513.png" alt="SMARRTIFAI" class="logo">
+                </a>
+            </div>
+            <div class="nav-steps">
+                <div class="step active" id="step-1"><span>1</span> Upload</div>
+                <div class="step" id="step-2"><span>2</span> Assess</div>
+                <div class="step" id="step-3"><span>3</span> Results</div>
+                <div class="step" id="step-4"><span>4</span> Roadmap</div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div id="upload-section" class="section-card">
+            <div class="section-header">
+                <div class="section-icon"><i class="fas fa-file-upload"></i></div>
+                <h2>Upload Your Resume</h2>
+                <p>Drag & drop or click to upload your resume for AI analysis</p>
+            </div>
+            <div class="upload-area" id="upload-area">
+                <div class="upload-content">
+                    <i class="fas fa-cloud-upload-alt"></i>
+                    <h3>Drop your resume here</h3>
+                    <p>or <span class="upload-link">browse files</span></p>
+                    <small>Supports PDF, DOC, DOCX (Max 16MB)</small>
+                </div>
+                <input type="file" id="resume-file" accept=".pdf,.doc,.docx" hidden>
+            </div>
+            <div class="upload-actions">
+                <button class="btn-primary" onclick="uploadResume()">
+                    <i class="fas fa-brain"></i> Analyze Resume
+                </button>
+            </div>
+            <div id="upload-status" class="status-area"></div>
+        </div>
+    </div>
+
+    <div id="loading-overlay" class="loading-overlay hidden">
+        <div class="loading-content">
+            <div class="loading-spinner"></div>
+            <h3>Analyzing Your Skills...</h3>
+            <p>Please wait while we process your resume</p>
+        </div>
+    </div>
+
+    <script>
+        // Upload functionality
+        const uploadArea = document.getElementById('upload-area');
+        const fileInput = document.getElementById('resume-file');
+        const uploadStatus = document.getElementById('upload-status');
+        const loadingOverlay = document.getElementById('loading-overlay');
+
+        uploadArea.addEventListener('click', () => fileInput.click());
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('drag-over');
+        });
+        uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('drag-over'));
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('drag-over');
+            fileInput.files = e.dataTransfer.files;
+            updateFileDisplay();
+        });
+
+        fileInput.addEventListener('change', updateFileDisplay);
+
+        function updateFileDisplay() {
+            const file = fileInput.files[0];
+            if (file) {
+                uploadArea.innerHTML = `
+                    <div class="file-selected">
+                        <i class="fas fa-file-alt"></i>
+                        <h3>${file.name}</h3>
+                        <p>Size: ${(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                        <small>Click to change file</small>
+                    </div>
+                `;
+            }
+        }
+
+        async function uploadResume() {
+            const file = fileInput.files[0];
+            if (!file) {
+                alert('Please select a file first');
+                return;
+            }
+
+            // Validate file size (16MB limit)
+            if (file.size > 16 * 1024 * 1024) {
+                uploadStatus.innerHTML = `<div class="error">File too large. Maximum size is 16MB.</div>`;
+                return;
+            }
+
+            // Validate file type
+            const allowedTypes = ['.pdf', '.doc', '.docx'];
+            const fileExt = '.' + file.name.split('.').pop().toLowerCase();
+            if (!allowedTypes.includes(fileExt)) {
+                uploadStatus.innerHTML = `<div class="error">Invalid file type. Please upload PDF, DOC, or DOCX files only.</div>`;
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('resume', file);
+
+            loadingOverlay.classList.remove('hidden');
+            uploadStatus.innerHTML = '';
+
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+
+                const response = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData,
+                    signal: controller.signal
+                });
+
+                clearTimeout(timeoutId);
+
+                if (!response.ok) {
+                    throw new Error(`Server error: ${response.status}`);
+                }
+
+                const data = await response.json();
+                
+                if (data.redirect) {
+                    window.location.href = data.redirect;
+                } else if (data.error) {
+                    uploadStatus.innerHTML = `<div class="error">${data.error}</div>`;
+                }
+            } catch (error) {
+                if (error.name === 'AbortError') {
+                    uploadStatus.innerHTML = `<div class="error">Upload timeout. Please try again with a smaller file.</div>`;
+                } else {
+                    uploadStatus.innerHTML = `<div class="error">Upload failed: ${error.message}</div>`;
+                }
+            } finally {
+                loadingOverlay.classList.add('hidden');
+            }
+        }
+    </script>
+</body>
+</html>

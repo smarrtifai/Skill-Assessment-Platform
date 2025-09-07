@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Career Roadmap - Skills Assessment Platform</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/roadmap-styles.css') }}">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <a href="/">
+                    <img src="/Assets/Screenshot 2025-08-01 092513.png" alt="SMARRTIFAI" class="logo">
+                </a>
+            </div>
+            <div class="nav-steps">
+                <div class="step" id="step-1"><span>1</span> Upload</div>
+                <div class="step" id="step-2"><span>2</span> Assess</div>
+                <div class="step" id="step-3"><span>3</span> Results</div>
+                <div class="step active" id="step-4"><span>4</span> Roadmap</div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div id="roadmap-section" class="section-card">
+            <div class="roadmap-header">
+                <h2><i class="fas fa-map-marked-alt"></i> Your Career Roadmap</h2>
+                <p>Personalized learning path based on your skills and goals</p>
+            </div>
+            <div id="roadmap-content-wrapper">
+                <div id="roadmap-content" class="roadmap-display"></div>
+                <div id="roadmap-lock-overlay" class="hidden">
+                    <div class="lock-content">
+                        <i class="fas fa-lock"></i>
+                        <h3>Unlock Your Full Career Roadmap</h3>
+                        <p>Get access to detailed learning paths, resources, and personalized recommendations</p>
+                        <button class="btn-primary" onclick="unlockRoadmap()">
+                            <i class="fas fa-crown"></i> Upgrade to Pro
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="roadmap-actions">
+                <button class="btn-primary" id="download-roadmap-btn" onclick="downloadRoadmap()" disabled>
+                    <i class="fas fa-download"></i> Download Roadmap
+                </button>
+                <button class="btn-secondary" onclick="shareRoadmap()">
+                    <i class="fas fa-share-alt"></i> Share
+                </button>
+                <button class="btn-secondary" onclick="startOver()">
+                    <i class="fas fa-redo"></i> Start Over
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let roadmapData = {};
+
+        // Load roadmap data on page load
+        window.addEventListener('load', async () => {
+            try {
+                const response = await fetch('/api/get_roadmap_data');
+                roadmapData = await response.json();
+                
+                if (!roadmapData.field) {
+                    window.location.href = '/';
+                    return;
+                }
+
+                displayRoadmap();
+            } catch (error) {
+                console.error('Failed to load roadmap data:', error);
+                window.location.href = '/';
+            }
+        });
+
+        function displayRoadmap() {
+            const roadmapHtml = `
+                <div class="roadmap-overview">
+                    <div class="roadmap-meta">
+                        <div class="meta-item">
+                            <i class="fas fa-bullseye"></i>
+                            <span>Career Path: <strong>${roadmapData.field}</strong></span>
+                        </div>
+                        <div class="meta-item">
+                            <i class="fas fa-level-up-alt"></i>
+                            <span>Current Level: <strong>${roadmapData.current_level}</strong></span>
+                        </div>
+                        <div class="meta-item">
+                            <i class="fas fa-calendar-alt"></i>
+                            <span>Estimated Timeline: <strong>${getEstimatedTimeline()}</strong></span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="roadmap-timeline">
+                    <div class="timeline-level ${roadmapData.current_level?.toLowerCase() === 'beginner' ? 'current' : 'completed'}">
+                        <div class="timeline-marker">
+                            <i class="fas fa-play-circle"></i>
+                        </div>
+                        <div class="timeline-content">
+                            <h3>Beginner Level</h3>
+                            <p class="timeline-duration">${roadmapData.timeline?.beginner || '3-6 months'}</p>
+                            <div class="learning-items">
+                                ${(roadmapData.roadmap?.beginner || []).map(item => 
+                                    `<div class="learning-item">${item}</div>`
+                                ).join('')}
+                            </div>
+                            <div class="resources-section">
+                                <h5>Recommended Resources:</h5>
+                                <ul>
+                                    ${(roadmapData.learning_resources?.beginner || []).map(resource => 
+                                        `<li>${resource}</li>`
+                                    ).join('')}
+                                </ul>
+                            </div>
+                            <div class="projects-section">
+                                <h5>Practice Projects:</h5>
+                                <ul>
+                                    ${(roadmapData.project_ideas?.beginner || []).map(project => 
+                                        `<li>${project}</li>`
+                                    ).join('')}
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="timeline-level ${roadmapData.current_level?.toLowerCase() === 'intermediate' ? 'current' : 
+                        roadmapData.current_level?.toLowerCase() === 'advanced' ? 'completed' : 'upcoming'}">
+                        <div class="timeline-marker">
+                            <i class="fas fa-arrow-up"></i>
+                        </div>
+                        <div class="timeline-content">
+                            <h3>Intermediate Level</h3>
+                            <p class="timeline-duration">${roadmapData.timeline?.intermediate || '6-12 months'}</p>
+                            <div class="learning-items">
+                                ${(roadmapData.roadmap?.intermediate || []).map(item => 
+                                    `<div class="learning-item">${item}</div>`
+                                ).join('')}
+                            </div>
+                            <div class="resources-section">
+                                <h5>Recommended Resources:</h5>
+                                <ul>
+                                    ${(roadmapData.learning_resources?.intermediate || []).map(resource => 
+                                        `<li>${resource}</li>`
+                                    ).join('')}
+                                </ul>
+                            </div>
+                            <div class="projects-section">
+                                <h5>Practice Projects:</h5>
+                                <ul>
+                                    ${(roadmapData.project_ideas?.intermediate || []).map(project => 
+                                        `<li>${project}</li>`
+                                    ).join('')}
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="timeline-level ${roadmapData.current_level?.toLowerCase() === 'advanced' ? 'current' : 'upcoming'}">
+                        <div class="timeline-marker">
+                            <i class="fas fa-crown"></i>
+                        </div>
+                        <div class="timeline-content">
+                            <h3>Advanced Level</h3>
+                            <p class="timeline-duration">${roadmapData.timeline?.advanced || '12+ months'}</p>
+                            <div class="learning-items">
+                                ${(roadmapData.roadmap?.advanced || []).map(item => 
+                                    `<div class="learning-item">${item}</div>`
+                                ).join('')}
+                            </div>
+                            <div class="resources-section">
+                                <h5>Recommended Resources:</h5>
+                                <ul>
+                                    ${(roadmapData.learning_resources?.advanced || []).map(resource => 
+                                        `<li>${resource}</li>`
+                                    ).join('')}
+                                </ul>
+                            </div>
+                            <div class="projects-section">
+                                <h5>Practice Projects:</h5>
+                                <ul>
+                                    ${(roadmapData.project_ideas?.advanced || []).map(project => 
+                                        `<li>${project}</li>`
+                                    ).join('')}
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="recommended-skills">
+                    <h3><i class="fas fa-star"></i> Key Skills to Master</h3>
+                    <div class="skills-grid">
+                        ${(roadmapData.recommended_skills || []).map(skill => 
+                            `<div class="skill-item">
+                                <i class="fas fa-check-circle"></i>
+                                <span>${skill}</span>
+                            </div>`
+                        ).join('')}
+                    </div>
+                </div>
+            `;
+
+            document.getElementById('roadmap-content').innerHTML = roadmapHtml;
+            
+            // Apply blur effect to roadmap content
+            document.getElementById('roadmap-content').classList.add('blurred');
+            document.getElementById('roadmap-lock-overlay').classList.remove('hidden');
+        }
+
+        function getEstimatedTimeline() {
+            const currentLevel = roadmapData.current_level?.toLowerCase();
+            if (currentLevel === 'advanced') return '6+ months to mastery';
+            if (currentLevel === 'intermediate') return '12-18 months to advanced';
+            return '18-24 months to advanced';
+        }
+
+        async function downloadRoadmap() {
+            try {
+                const response = await fetch('/api/download_roadmap', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `career_roadmap_${new Date().toISOString().split('T')[0]}.txt`;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                } else {
+                    alert('Error downloading roadmap. Please try again.');
+                }
+            } catch (error) {
+                console.error('Download error:', error);
+                alert('Error downloading roadmap. Please check server connection.');
+            }
+        }
+
+        function shareRoadmap() {
+            if (navigator.share) {
+                navigator.share({
+                    title: `My ${roadmapData.field} Career Roadmap`,
+                    text: `Check out my personalized career roadmap for ${roadmapData.field}!`,
+                    url: window.location.href
+                });
+            } else {
+                // Fallback: copy to clipboard
+                navigator.clipboard.writeText(window.location.href).then(() => {
+                    alert('Roadmap link copied to clipboard!');
+                });
+            }
+        }
+
+        function startOver() {
+            if (confirm('Are you sure you want to start a new assessment? This will clear your current results.')) {
+                // Clear session data
+                fetch('/api/clear_session', { method: 'POST' })
+                    .then(() => {
+                        window.location.href = '/';
+                    })
+                    .catch(() => {
+                        window.location.href = '/';
+                    });
+            }
+        }
+
+        function unlockRoadmap() {
+            // Simulate unlock (remove blur and overlay)
+            document.getElementById('roadmap-content').classList.remove('blurred');
+            document.getElementById('roadmap-lock-overlay').classList.add('hidden');
+            document.getElementById('download-roadmap-btn').disabled = false;
+            
+            // Show success message
+            alert('🎉 Roadmap unlocked! You now have full access to your personalized career path.');
+        }
+    </script>
+</body>
+</html>

@@ -24,6 +24,7 @@ const Elements = {
     timerDisplay: () => document.getElementById('timer-display'),
     warningModal: () => document.getElementById('warning-modal'),
     progressBar: () => document.getElementById('progress-bar'),
+    progressText: () => document.getElementById('progress-text'),
     questionCounter: () => document.getElementById('question-counter'),
     skillsFound: () => document.getElementById('skills-found'),
     questionsContainer: () => document.getElementById('questions-container'),
@@ -296,17 +297,24 @@ const Assessment = {
                 <h5><i class="fas fa-trophy"></i> Key Achievements</h5>
                 <ul>${data.achievements.map(achievement => `<li>${achievement}</li>`).join('')}</ul>
             </div>` : '';
+
+        const internshipsHtml = data.internships && data.internships.length > 0 ? 
+            `<div class="resume-section">
+                <h5><i class="fas fa-briefcase"></i> Internship Experience</h5>
+                <ul>${data.internships.map(internship => `<li>${internship}</li>`).join('')}</ul>
+            </div>` : '';
         
-        const isResumeAnalysis = data.projects && data.projects.length > 0;
+        const isResumeAnalysis = (data.projects && data.projects.length > 0) || (data.internships && data.internships.length > 0);
         const headerText = isResumeAnalysis ? 'Resume Analysis' : 'Interests Overview';
         const contextText = isResumeAnalysis 
-            ? 'Questions will be based on your skills, projects, and achievements'
+            ? 'Questions will be based on your skills, projects, and experience'
             : 'Questions will be based on your selected interests';
 
         Elements.skillsFound().innerHTML = `
             <h4><i class="fas fa-cogs"></i> ${headerText}</h4>
             <div class="skills-badges">${skillsBadges}</div>
             ${projectsHtml}
+            ${internshipsHtml}
             ${achievementsHtml}
             <p class="context-note"><i class="fas fa-info-circle"></i> ${contextText}</p>
         `;
@@ -339,7 +347,7 @@ const Assessment = {
         const total = AppState.currentQuestions.length;
         const progress = total > 0 ? (answered / total) * 100 : 0;
         Elements.progressBar().style.width = progress + '%';
-        AppState.progressText().textContent = `${Math.round(progress)}%`;
+        Elements.progressText().textContent = `${Math.round(progress)}%`;
     },
 
     async submit() {

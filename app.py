@@ -2,7 +2,7 @@ import os
 import json
 import random
 from datetime import datetime
-from flask import Flask, request, jsonify, render_template, send_file, session
+from flask import Flask, request, jsonify, render_template, send_file, session, redirect, url_for
 from werkzeug.utils import secure_filename
 import PyPDF2
 import docx
@@ -44,6 +44,16 @@ SKILLS_DATABASE = {
     'react': ['frontend', 'web development', 'javascript'],
     'aws': ['cloud', 'devops', 'infrastructure'],
     'docker': ['containerization', 'devops', 'deployment']
+}
+
+SOFT_SKILLS_MAP = {
+    'leadership': ['managed', 'led', 'supervised', 'mentored', 'directed', 'coordinated', 'oversaw'],
+    'communication': ['presented', 'wrote', 'negotiated', 'collaborated', 'documented', 'authored'],
+    'problem-solving': ['solved', 'analyzed', 'optimized', 'resolved', 'debugged', 'troubleshot'],
+    'project management': ['planned', 'scheduled', 'budgeted', 'delivered', 'launched'],
+    'teamwork': ['collaborated', 'partnered', 'team player', 'worked with'],
+    'creativity': ['designed', 'created', 'innovated', 'prototyped'],
+    'analytical skills': ['analyzed', 'interpreted', 'forecasted', 'modeled', 'quantified']
 }
 
 TECH_FIELDS = {
@@ -211,6 +221,10 @@ SAMPLE_QUESTIONS = {
             {'question': 'If you improved application performance by 50%, what metrics would you track?', 'options': ['Response time only', 'CPU and memory usage', 'User satisfaction', 'Response time, throughput, resource usage'], 'correct': 3},
             {'question': 'How would you measure the success of a code optimization project?', 'options': ['Lines of code reduced', 'Performance benchmarks', 'User feedback', 'Performance + maintainability metrics'], 'correct': 3},
             {'question': 'What would indicate successful implementation of automated testing?', 'options': ['100% code coverage', 'Reduced bug reports', 'Faster deployment', 'Coverage + quality + speed'], 'correct': 3}
+        ],
+        'internship': [
+            {'question': 'During a Python-focused internship, what was the most valuable non-technical skill you learned?', 'options': ['Time management', 'Team collaboration', 'Presenting technical concepts to non-technical people', 'All of the above'], 'correct': 3},
+            {'question': 'Reflecting on an internship project using Python, what is one thing you would do differently if you started again?', 'options': ['Write more unit tests from the beginning', 'Choose a different primary library', 'Spend less time on initial setup', 'Focus only on my assigned tasks'], 'correct': 0}
         ]
     },
     'javascript': {
@@ -228,6 +242,10 @@ SAMPLE_QUESTIONS = {
         'achievement': [
             {'question': 'How would you measure improved user experience in a web application?', 'options': ['Page load time', 'User engagement metrics', 'Code quality', 'Load time + engagement + usability'], 'correct': 3},
             {'question': 'What metrics would show successful implementation of responsive design?', 'options': ['Mobile traffic increase', 'Cross-device compatibility', 'User satisfaction', 'All device metrics + performance'], 'correct': 3}
+        ],
+        'internship': [
+            {'question': 'In your JavaScript internship, how did you ensure your code was maintainable for other developers?', 'options': ['By using many comments', 'By following a style guide and writing clear functions', 'By using the latest experimental features', 'By writing all code in a single file'], 'correct': 1},
+            {'question': 'What was the biggest challenge you faced when working with a large existing JavaScript codebase during your internship?', 'options': ['Understanding the build process', 'Navigating the component structure', 'Dealing with legacy code or dependencies', 'All of the above'], 'correct': 3}
         ]
     },
     'sql': {
@@ -340,18 +358,32 @@ class FileProcessor:
     @staticmethod
     def extract_text_from_pdf(file_path):
         """Extract text from PDF file."""
-        text = ""
-        with open(file_path, 'rb') as file:
-            pdf_reader = PyPDF2.PdfReader(file)
-            for page in pdf_reader.pages:
-                text += page.extract_text()
-        return text
+        try:
+            text = ""
+            with open(file_path, 'rb') as file:
+                pdf_reader = PyPDF2.PdfReader(file)
+                for page in pdf_reader.pages:
+                    page_text = page.extract_text()
+                    if page_text:
+                        text += page_text + "\n"
+            return text.strip()
+        except Exception as e:
+            print(f"PDF extraction error: {e}")
+            return ""
 
     @staticmethod
     def extract_text_from_docx(file_path):
         """Extract text from DOCX file."""
-        doc = docx.Document(file_path)
-        return "\n".join([paragraph.text for paragraph in doc.paragraphs])
+        try:
+            doc = docx.Document(file_path)
+            text_parts = []
+            for paragraph in doc.paragraphs:
+                if paragraph.text.strip():
+                    text_parts.append(paragraph.text.strip())
+            return "\n".join(text_parts)
+        except Exception as e:
+            print(f"DOCX extraction error: {e}")
+            return ""
 
 class SkillExtractor:
     """Extract skills and experience from resume text."""
@@ -360,15 +392,21 @@ class SkillExtractor:
     def extract_skills_from_text(text):
         """Extract skills, projects, and achievements from resume."""
         text_lower = text.lower()
-        found_skills = []
+        found_skills = set()
         projects = []
         achievements = []
+        internships = []
         
-        # Extract skills
+        # Extract hard skills
         for skill, keywords in SKILLS_DATABASE.items():
             if skill in text_lower or any(keyword in text_lower for keyword in keywords):
-                found_skills.append(skill)
+                found_skills.add(skill.capitalize())
         
+        # Extract soft skills from action verbs
+        for skill, verbs in SOFT_SKILLS_MAP.items():
+            if any(verb in text_lower for verb in verbs):
+                found_skills.add(skill.capitalize())
+
         # Extract project experience
         project_keywords = ['project', 'developed', 'built', 'created', 'implemented', 'designed']
         for keyword in project_keywords:
@@ -387,6 +425,16 @@ class SkillExtractor:
                 for sentence in sentences:
                     if keyword in sentence.lower() and len(sentence.strip()) > 15:
                         achievements.append(sentence.strip()[:100] + '...' if len(sentence) > 100 else sentence.strip())
+                        break
+        
+        # Extract internships
+        internship_keywords = ['intern', 'internship', 'trainee', 'apprenticeship']
+        for keyword in internship_keywords:
+            if keyword in text_lower:
+                sentences = text.split('.')
+                for sentence in sentences:
+                    if keyword in sentence.lower() and len(sentence.strip()) > 20:
+                        internships.append(sentence.strip()[:100] + '...' if len(sentence) > 100 else sentence.strip())
                         break
         
         # Extract education
@@ -412,9 +460,10 @@ class SkillExtractor:
                         break
         
         return {
-            'skills': found_skills,
+            'skills': sorted(list(found_skills)),
             'projects': projects[:3],
             'achievements': achievements[:3],
+            'internships': internships[:2],
             'education': education[:2],
             'domain': domain[:2]
         }
@@ -432,17 +481,19 @@ class QuestionGenerator:
         skills_str = ", ".join(extracted_data.get('skills', []))
         projects_str = "\n".join([f"- {p}" for p in extracted_data.get('projects', [])])
         achievements_str = "\n".join([f"- {a}" for a in extracted_data.get('achievements', [])])
+        internships_str = "\n".join([f"- {i}" for i in extracted_data.get('internships', [])])
 
         prompt = f"""
-You are an expert technical interviewer creating a skills assessment. Based on the following resume data, generate {num_questions} multiple-choice questions (MCQs).
+You are an expert technical interviewer creating a skills assessment. Based on the following resume data, generate {num_questions} multiple-choice questions (MCQs) that cross-question their experience.
 
 **Resume Data:**
 - **Skills:** {skills_str if skills_str else 'Not specified'}
 - **Projects:** {projects_str if projects_str else 'Not specified'}
 - **Achievements:** {achievements_str if achievements_str else 'Not specified'}
+- **Internships:** {internships_str if internships_str else 'Not specified'}
 
 **Instructions:**
-1. Generate exactly {num_questions} unique MCQs that are relevant to the provided skills.
+1. Generate exactly {num_questions} unique MCQs that are relevant to the provided skills, projects, and internships.
 2. The questions should cover a range of difficulties from easy to hard.
 3. Each question must have exactly 4 options.
 4. For about 30-50% of the questions, include a relevant code snippet within the 'question' field to test practical application. The code snippet should be properly escaped for JSON, using `\\n` for newlines.
@@ -486,10 +537,14 @@ You are an expert technical interviewer creating a skills assessment. Based on t
             parsed_json = json.loads(response_content)
 
             questions = parsed_json.get('questions') if isinstance(parsed_json, dict) else parsed_json
-
+ 
             if not isinstance(questions, list) or not all('question' in q and 'options' in q and 'correct' in q for q in questions):
                  print("🚨 Groq response JSON is malformed or empty. Using fallback.")
                  return QuestionGenerator.generate_fallback_questions(extracted_data, num_questions)
+ 
+            if len(questions) < num_questions:
+                print(f"🚨 Groq returned only {len(questions)}/{num_questions} questions. Using fallback to ensure count.")
+                return QuestionGenerator.generate_fallback_questions(extracted_data, num_questions)
 
             print(f"✅ Successfully generated {len(questions)} questions from Groq.")
             return questions
@@ -500,52 +555,54 @@ You are an expert technical interviewer creating a skills assessment. Based on t
 
     @staticmethod
     def generate_fallback_questions(extracted_data, num_questions):
-        """Generate contextual questions based on skills, projects, and achievements."""
-        skills = extracted_data['skills']
-        projects = extracted_data['projects']
-        achievements = extracted_data['achievements']
+        """Generate contextual questions, ensuring the final count is met."""
+        skills = extracted_data.get('skills', [])
+        projects = extracted_data.get('projects', [])
+        achievements = extracted_data.get('achievements', [])
+        internships = extracted_data.get('internships', [])
         
-        available_questions = []
+        specific_questions = []
         
-        # Generate questions for each skill with different contexts
+        # 1. Gather questions for matched skills
         for skill in skills:
             if skill in SAMPLE_QUESTIONS:
-                skill_questions = SAMPLE_QUESTIONS[skill]
-                
-                # Check if skill_questions is a dict (new format) or list (old format)
-                if isinstance(skill_questions, dict):
-                    # Add technical questions
-                    if 'technical' in skill_questions:
-                        available_questions.extend(skill_questions['technical'])
-                    
-                    # Add project-based questions if projects exist
-                    if projects and 'project' in skill_questions:
-                        available_questions.extend(skill_questions['project'])
-                    
-                    # Add achievement-based questions if achievements exist
-                    if achievements and 'achievement' in skill_questions:
-                        available_questions.extend(skill_questions['achievement'])
+                skill_data = SAMPLE_QUESTIONS[skill]
+                if isinstance(skill_data, dict):
+                    specific_questions.extend(skill_data.get('technical', []))
+                    if projects:
+                        specific_questions.extend(skill_data.get('project', []))
+                    if achievements:
+                        specific_questions.extend(skill_data.get('achievement', []))
+                    if internships:
+                        specific_questions.extend(skill_data.get('internship', []))
                 else:
-                    # Old format - just add all questions
-                    available_questions.extend(skill_questions)
+                    specific_questions.extend(skill_data)
         
-        # If no skills matched, return empty
-        if not available_questions:
-            return []
+        # 2. Create a unique set of questions based on the question text
+        unique_questions_map = {q['question']: q for q in specific_questions}
+
+        # 3. If not enough unique questions, supplement from the general pool
+        if len(unique_questions_map) < num_questions:
+            print(f"⚠️ Not enough specific questions ({len(unique_questions_map)}). Supplementing with general questions.")
+            all_questions_pool = []
+            for skill_data in SAMPLE_QUESTIONS.values():
+                if isinstance(skill_data, dict):
+                    for question_list in skill_data.values():
+                        all_questions_pool.extend(question_list)
+                else:
+                    all_questions_pool.extend(skill_data)
+            
+            for q in all_questions_pool:
+                if len(unique_questions_map) >= num_questions:
+                    break
+                if q['question'] not in unique_questions_map:
+                    unique_questions_map[q['question']] = q
         
-        # Ensure variety in question types
-        selected_questions = []
+        # 4. Convert map to list, shuffle, and return the required number
+        final_question_pool = list(unique_questions_map.values())
+        random.shuffle(final_question_pool)
         
-        # Try to get balanced questions from each type
-        for _ in range(num_questions):
-            if available_questions:
-                question = random.choice(available_questions)
-                selected_questions.append(question)
-                available_questions.remove(question)
-            else:
-                break
-        
-        return selected_questions
+        return final_question_pool[:num_questions]
 
 class AssessmentEvaluator:
     """Evaluate assessment results."""
@@ -629,11 +686,31 @@ class RoadmapGenerator:
 # Routes
 @app.route('/')
 def index():
-    """Render main page."""
+    """Landing page with onboarding."""
     if 'user_id' not in session:
         session['user_id'] = str(uuid.uuid4())
         session['onboarding_step'] = 0
     return render_template('index.html')
+
+@app.route('/upload')
+def upload_page():
+    """Resume upload page."""
+    return render_template('upload.html')
+
+@app.route('/assessment')
+def assessment_page():
+    """Assessment page."""
+    return render_template('assessment.html')
+
+@app.route('/results')
+def results_page():
+    """Results page."""
+    return render_template('results.html')
+
+@app.route('/roadmap')
+def roadmap_page():
+    """Roadmap page."""
+    return render_template('roadmap.html')
 
 @app.route('/Assets/<filename>')
 def assets(filename):
@@ -683,6 +760,16 @@ def handle_onboarding():
     if step < len(onboarding_responses):
         return jsonify(onboarding_responses[step])
     else:
+        # Handle final choice and redirect
+        if step == 3:
+            choice = data.get('response', '')
+            if 'resume' in choice.lower():
+                return jsonify({'complete': True, 'redirect': '/upload'})
+            elif 'assessment' in choice.lower():
+                return jsonify({'complete': True, 'redirect': '/assessment'})
+            else:
+                return jsonify({'complete': True, 'redirect': '/upload'})
+        
         return jsonify({'complete': True, 'message': 'Let\'s get started with your personalized journey!'})
 
 @app.route('/api/assessment/interest-based', methods=['POST'])
@@ -740,14 +827,17 @@ You are an expert technical interviewer creating a skills assessment. Based on t
             parsed_json = json.loads(response_content)
             questions = parsed_json.get('questions') if isinstance(parsed_json, dict) else parsed_json
 
-            if isinstance(questions, list) and all('question' in q and 'options' in q and 'correct' in q for q in questions):
+            if isinstance(questions, list) and len(questions) >= num_questions and all('question' in q and 'options' in q and 'correct' in q for q in questions):
                 print(f"✅ Successfully generated {len(questions)} questions from Groq for interests.")
-                return jsonify({
-                    'skills': interests, 'projects': [], 'achievements': [],
-                    'questions': questions, 'test_duration': 1800  # 30 minutes for 30 questions
-                })
+                session['assessment_data'] = {
+                    'skills': interests, 'projects': [], 'achievements': [], 'internships': [],
+                    'questions': questions, 'test_duration': 1800
+                }
+                return jsonify({'redirect': '/assessment'})
             else:
-                print("🚨 Groq response JSON is malformed or empty for interests. Using fallback.")
+                print("🚨 Groq response for interests is malformed or incomplete. Using fallback.")
+                if isinstance(questions, list):
+                    print(f"   (Received {len(questions)} questions, expected {num_questions})")
         except Exception as e:
             print(f"🚨 Groq API call for interests failed: {e}. Using fallback questions.")
 
@@ -783,10 +873,11 @@ You are an expert technical interviewer creating a skills assessment. Based on t
     if not questions:
         return jsonify({'error': 'We couldn\'t generate an assessment for your selected interests at this time.'}), 400
 
-    return jsonify({
-        'skills': interests, 'projects': [], 'achievements': [],
-        'questions': questions, 'test_duration': 1800  # 30 minutes
-    })
+    session['assessment_data'] = {
+        'skills': interests, 'projects': [], 'achievements': [], 'internships': [],
+        'questions': questions, 'test_duration': 1800
+    }
+    return jsonify({'redirect': '/assessment'})
 
 @app.route('/api/mentor', methods=['POST'])
 def ai_mentor():
@@ -839,54 +930,85 @@ Keep the response to 2-4 sentences.
         print(f"🚨 AI Mentor (Groq) API call failed: {e}")
         return jsonify({'response': 'Sorry, I encountered an error while trying to answer. Please try again.'}), 500
 
-@app.route('/upload', methods=['POST'])
+@app.route('/api/upload', methods=['POST'])
 def upload_resume():
     """Handle resume upload and analysis."""
-    if 'resume' not in request.files:
-        return jsonify({'error': 'No file uploaded'}), 400
-    
-    file = request.files['resume']
-    if file.filename == '':
-        return jsonify({'error': 'No file selected'}), 400
-    
-    filename = secure_filename(file.filename)
-    file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-    file.save(file_path)
-    
     try:
+        if 'resume' not in request.files:
+            return jsonify({'error': 'No file uploaded'}), 400
+        
+        file = request.files['resume']
+        if file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+        
+        # Validate file size
+        if request.content_length and request.content_length > app.config['MAX_CONTENT_LENGTH']:
+            return jsonify({'error': 'File too large. Maximum size is 16MB.'}), 413
+        
+        filename = secure_filename(file.filename)
+        if not filename:
+            return jsonify({'error': 'Invalid filename'}), 400
+            
+        # Validate file extension
+        allowed_extensions = {'.pdf', '.doc', '.docx'}
+        file_ext = '.' + filename.rsplit('.', 1)[1].lower() if '.' in filename else ''
+        if file_ext not in allowed_extensions:
+            return jsonify({'error': 'Unsupported file format. Please upload PDF, DOC, or DOCX files.'}), 400
+        
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(file_path)
+        
         # Extract text based on file type
-        if filename.lower().endswith('.pdf'):
+        text = ''
+        if file_ext == '.pdf':
             text = FileProcessor.extract_text_from_pdf(file_path)
-        elif filename.lower().endswith(('.doc', '.docx')):
+        elif file_ext in ['.doc', '.docx']:
             text = FileProcessor.extract_text_from_docx(file_path)
-        else:
-            return jsonify({'error': 'Unsupported file format'}), 400
+        
+        if not text or len(text.strip()) < 50:
+            os.remove(file_path)  # Clean up
+            return jsonify({'error': 'Could not extract text from file or file is too short. Please ensure the file contains readable text.'}), 400
         
         # AI Processing: Extract skills, education, domain expertise
         extracted_data = SkillExtractor.extract_skills_from_text(text)
         
+        if not extracted_data['skills']:
+            os.remove(file_path)  # Clean up
+            return jsonify({'error': 'No technical skills found in resume. Please upload a technical resume with relevant skills.'}), 400
+        
         # AI Processing: Generate 30 tailored MCQs
         questions = QuestionGenerator.generate_questions_with_groq(extracted_data, 30)
         
-        if not questions:
-            return jsonify({'error': 'No relevant technical skills found in resume. Please upload a technical resume.'}), 400
+        if not questions or len(questions) < 10:
+            os.remove(file_path)  # Clean up
+            return jsonify({'error': 'Could not generate enough questions from resume. Please try with a more detailed technical resume.'}), 400
         
-        # Return extracted data and MCQs to platform
-        return jsonify({
+        # Store in session for assessment page
+        session['assessment_data'] = {
             'skills': extracted_data['skills'],
             'projects': extracted_data['projects'], 
             'achievements': extracted_data['achievements'],
+            'internships': extracted_data.get('internships', []),
             'education': extracted_data.get('education', []),
             'domain_expertise': extracted_data.get('domain', []),
             'questions': questions,
             'session_id': datetime.now().strftime('%Y%m%d_%H%M%S'),
-            'test_duration': 1800  # 30 minutes as per flow
-        })
+            'test_duration': 1800
+        }
+        
+        # Clean up uploaded file
+        try:
+            os.remove(file_path)
+        except:
+            pass
+        
+        return jsonify({'redirect': '/assessment'})
     
     except Exception as e:
-        return jsonify({'error': f'Processing failed: {str(e)}'}), 500
+        print(f"Upload error: {str(e)}")  # Log error
+        return jsonify({'error': 'Processing failed. Please try again with a different file.'}), 500
 
-@app.route('/assess', methods=['POST'])
+@app.route('/api/assess', methods=['POST'])
 def assess_skills():
     """Evaluate assessment responses."""
     data = request.json
@@ -905,43 +1027,40 @@ def assess_skills():
     strengths, weaknesses, skill_gaps = AssessmentEvaluator.analyze_performance(answers, questions, skills)
     
     session['assessment_results'] = {
-        'level': level,
-        'strengths': strengths,
-        'weaknesses': weaknesses,
-        'skills': skills,
-        'percentage': percentage,
-    }
-    
-    return jsonify({
         'score': score,
         'total': total,
         'percentage': percentage,
         'level': level,
         'strengths': strengths,
-        'weaknesses': weaknesses, 
+        'weaknesses': weaknesses,
+        'skills': skills,
         'skill_gaps': skill_gaps,
         'tech_fields': list(TECH_FIELDS.keys())
-    })
+    }
+    
+    return jsonify({'redirect': '/results'})
 
-@app.route('/roadmap', methods=['POST'])
+@app.route('/api/roadmap', methods=['POST'])
 def generate_roadmap():
     """Generate personalized career roadmap."""
     data = request.json
     tech_field = data.get('tech_field')
-    skill_level = data.get('skill_level', 'Beginner')
-    skills = data.get('skills', [])
+    results = session.get('assessment_results', {})
+    skill_level = results.get('level', 'Beginner')
+    skills = results.get('skills', [])
     
     session['tech_field'] = tech_field
     
     # AI Processing: Create personalized roadmap with learning resources, project ideas, timelines
     roadmap = RoadmapGenerator.generate_roadmap_with_groq(tech_field, skill_level, skills)
+    session['roadmap_data'] = roadmap
     
-    return jsonify(roadmap)
+    return jsonify({'redirect': '/roadmap'})
 
-@app.route('/download_roadmap', methods=['POST'])
+@app.route('/api/download_roadmap', methods=['POST'])
 def download_roadmap():
     """Generate and download roadmap file."""
-    data = request.json
+    data = session.get('roadmap_data', {})
     
     roadmap_text = f"""
 PERSONALIZED CAREER ROADMAP
@@ -974,6 +1093,27 @@ RECOMMENDED SKILLS:
         f.write(roadmap_text)
     
     return send_file(filepath, as_attachment=True, download_name=filename)
+
+@app.route('/api/get_assessment_data')
+def get_assessment_data():
+    """Get assessment data for current session."""
+    return jsonify(session.get('assessment_data', {}))
+
+@app.route('/api/get_results_data')
+def get_results_data():
+    """Get results data for current session."""
+    return jsonify(session.get('assessment_results', {}))
+
+@app.route('/api/get_roadmap_data')
+def get_roadmap_data():
+    """Get roadmap data for current session."""
+    return jsonify(session.get('roadmap_data', {}))
+
+@app.route('/api/clear_session', methods=['POST'])
+def clear_session():
+    """Clear session data for new assessment."""
+    session.clear()
+    return jsonify({'success': True})
 
 if __name__ == '__main__':
     print('\n🚀 Starting Skills Assessment Platform...')

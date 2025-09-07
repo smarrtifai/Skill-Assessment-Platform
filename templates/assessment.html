@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Assessment - Skills Assessment Platform</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="no-copy" oncontextmenu="return false" onselectstart="return false" ondragstart="return false">
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <a href="/">
+                    <img src="/Assets/Screenshot 2025-08-01 092513.png" alt="SMARRTIFAI" class="logo">
+                </a>
+            </div>
+            <div class="nav-steps">
+                <div class="step" id="step-1"><span>1</span> Upload</div>
+                <div class="step active" id="step-2"><span>2</span> Assess</div>
+                <div class="step" id="step-3"><span>3</span> Results</div>
+                <div class="step" id="step-4"><span>4</span> Roadmap</div>
+            </div>
+        </div>
+    </nav>
+
+    <div id="timer-container" class="timer-widget">
+        <div class="timer-content">
+            <i class="fas fa-clock"></i>
+            <div class="timer-info">
+                <div id="timer-display">30:00</div>
+                <span>Time Remaining</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <div id="assessment-section" class="section-card">
+            <div class="assessment-header">
+                <div class="assessment-info">
+                    <h2><i class="fas fa-brain"></i> Skills Assessment</h2>
+                    <div class="question-meta">
+                        <div class="question-counter" id="question-counter">Question 1 of 30</div>
+                        <div class="difficulty-badge">Adaptive</div>
+                    </div>
+                </div>
+                <div class="progress-section">
+                    <div class="progress-info">
+                        <span>Progress</span>
+                        <span id="progress-text">0%</span>
+                    </div>
+                    <div class="progress">
+                        <div id="progress-bar" class="progress-bar" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+            <div id="skills-found" class="skills-display"></div>
+            <div id="question-navigator" class="question-navigator"></div>
+            <div id="questions-container" class="questions-area"></div>
+            <div class="assessment-actions">
+                <button class="btn-secondary hidden" id="prev-question" onclick="prevQuestion()">
+                    <i class="fas fa-arrow-left"></i> Previous
+                </button>
+                <button class="btn-secondary hidden" id="back-to-assessment-btn" onclick="backToAssessment()">
+                    <i class="fas fa-pencil-alt"></i> Back to Question
+                </button>
+                <button class="btn-primary hidden" id="next-question" onclick="nextQuestion()">
+                    Next <i class="fas fa-arrow-right"></i>
+                </button>
+                <button class="btn-primary hidden" id="submit-assessment" onclick="submitAssessment()">
+                    <i class="fas fa-check-circle"></i> Submit Assessment
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="warning-modal" class="modal-overlay hidden">
+        <div class="modal-content warning-modal">
+            <div class="modal-icon warning">
+                <i class="fas fa-exclamation-triangle"></i>
+            </div>
+            <h3>Security Alert</h3>
+            <p>Tab switching detected during assessment. This is your <strong>first warning</strong>.</p>
+            <p class="warning-text">Another violation will terminate your test session.</p>
+            <div class="modal-actions">
+                <button class="btn-danger" onclick="closeWarning()">
+                    <i class="fas fa-shield-alt"></i> Continue Securely
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let assessmentData = {};
+        let currentQuestionIndex = 0;
+        let userAnswers = [];
+        let timeRemaining = 1800;
+        let timerInterval;
+        let isReviewing = false;
+        let tabSwitchCount = 0;
+
+        // Load assessment data on page load
+        window.addEventListener('load', async () => {
+            try {
+                const response = await fetch('/api/get_assessment_data');
+                assessmentData = await response.json();
+                
+                if (!assessmentData.questions || assessmentData.questions.length === 0) {
+                    window.location.href = '/';
+                    return;
+                }
+
+                initializeAssessment();
+            } catch (error) {
+                console.error('Failed to load assessment data:', error);
+                window.location.href = '/';
+            }
+        });
+
+        function initializeAssessment() {
+            userAnswers = new Array(assessmentData.questions.length).fill(-1);
+            timeRemaining = assessmentData.test_duration || 1800;
+            
+            displaySkillsInfo();
+            renderCurrentQuestion();
+            updateQuestionNavigator();
+            startTimer();
+            setupSecurityMeasures();
+        }
+
+        function displaySkillsInfo() {
+            const skillsBadges = assessmentData.skills.map(skill => 
+                `<span class="skill-badge">${skill}</span>`
+            ).join('');
+            
+            const projectsHtml = assessmentData.projects && assessmentData.projects.length > 0 ? 
+                `<div class="resume-section">
+                    <h5><i class="fas fa-project-diagram"></i> Project Experience</h5>
+                    <ul>${assessmentData.projects.map(project => `<li>${project}</li>`).join('')}</ul>
+                </div>` : '';
+                
+            const achievementsHtml = assessmentData.achievements && assessmentData.achievements.length > 0 ? 
+                `<div class="resume-section">
+                    <h5><i class="fas fa-trophy"></i> Key Achievements</h5>
+                    <ul>${assessmentData.achievements.map(achievement => `<li>${achievement}</li>`).join('')}</ul>
+                </div>` : '';
+
+            const internshipsHtml = assessmentData.internships && assessmentData.internships.length > 0 ? 
+                `<div class="resume-section">
+                    <h5><i class="fas fa-briefcase"></i> Internship Experience</h5>
+                    <ul>${assessmentData.internships.map(internship => `<li>${internship}</li>`).join('')}</ul>
+                </div>` : '';
+            
+            const isResumeAnalysis = (assessmentData.projects && assessmentData.projects.length > 0) || 
+                                   (assessmentData.internships && assessmentData.internships.length > 0);
+            const headerText = isResumeAnalysis ? 'Resume Analysis' : 'Interests Overview';
+            const contextText = isResumeAnalysis 
+                ? 'Questions will be based on your skills, projects, and experience'
+                : 'Questions will be based on your selected interests';
+
+            document.getElementById('skills-found').innerHTML = `
+                <h4><i class="fas fa-cogs"></i> ${headerText}</h4>
+                <div class="skills-badges">${skillsBadges}</div>
+                ${projectsHtml}
+                ${internshipsHtml}
+                ${achievementsHtml}
+                <p class="context-note"><i class="fas fa-info-circle"></i> ${contextText}</p>
+            `;
+        }
+
+        function renderCurrentQuestion() {
+            if (isReviewing) return;
+
+            const question = assessmentData.questions[currentQuestionIndex];
+            const total = assessmentData.questions.length;
+            
+            document.getElementById('question-counter').textContent = `Question ${currentQuestionIndex + 1} of ${total}`;
+            
+            const optionsHtml = question.options.map((option, index) => `
+                <div class="option ${userAnswers[currentQuestionIndex] === index ? 'selected' : ''}" 
+                     onclick="selectOption(${index})">
+                    <input type="radio" id="q${currentQuestionIndex}_${index}" 
+                           name="q${currentQuestionIndex}" value="${index}" 
+                           ${userAnswers[currentQuestionIndex] === index ? 'checked' : ''}>
+                    <label for="q${currentQuestionIndex}_${index}">${option}</label>
+                </div>
+            `).join('');
+
+            document.getElementById('questions-container').innerHTML = `
+                <div class="question-card" data-question="${currentQuestionIndex}">
+                    <div class="question-text">${question.question.replace(/\n/g, '<br>')}</div>
+                    <div class="options-container">${optionsHtml}</div>
+                </div>
+            `;
+
+            updateNavigationButtons();
+            updateProgress();
+            updateQuestionNavigator();
+        }
+
+        function updateQuestionNavigator() {
+            const total = assessmentData.questions.length;
+            const navigatorHtml = Array.from({length: total}, (_, index) => {
+                let className = 'question-dot';
+                if (index === currentQuestionIndex) {
+                    className += ' current';
+                } else if (userAnswers[index] !== -1) {
+                    className += ' answered';
+                } else {
+                    className += ' unanswered';
+                }
+                
+                return `<div class="${className}" onclick="goToQuestion(${index})" title="Question ${index + 1}">${index + 1}</div>`;
+            }).join('');
+            
+            document.getElementById('question-navigator').innerHTML = `
+                <div class="navigator-header">
+                    <h4><i class="fas fa-list-ol"></i> Question Navigator</h4>
+                    <div class="legend">
+                        <span class="legend-item"><div class="dot current"></div> Current</span>
+                        <span class="legend-item"><div class="dot answered"></div> Answered</span>
+                        <span class="legend-item"><div class="dot unanswered"></div> Unanswered</span>
+                    </div>
+                </div>
+                <div class="navigator-grid">${navigatorHtml}</div>
+            `;
+        }
+
+        function goToQuestion(index) {
+            if (index >= 0 && index < assessmentData.questions.length) {
+                currentQuestionIndex = index;
+                renderCurrentQuestion();
+            }
+        }
+
+        function updateNavigationButtons() {
+            const prevBtn = document.getElementById('prev-question');
+            const nextBtn = document.getElementById('next-question');
+            const backBtn = document.getElementById('back-to-assessment-btn');
+            
+            // Hide back button in normal mode
+            backBtn.classList.add('hidden');
+
+            if (currentQuestionIndex > 0) {
+                prevBtn.classList.remove('hidden');
+            } else {
+                prevBtn.classList.add('hidden');
+            }
+
+            if (currentQuestionIndex < assessmentData.questions.length - 1) {
+                nextBtn.innerHTML = 'Next <i class="fas fa-arrow-right"></i>';
+                nextBtn.onclick = nextQuestion;
+                nextBtn.classList.remove('hidden');
+            } else {
+                nextBtn.innerHTML = 'Review Answers <i class="fas fa-tasks"></i>';
+                nextBtn.onclick = showReview;
+                nextBtn.classList.remove('hidden');
+            }
+        }
+
+        function selectOption(optionIndex) {
+            userAnswers[currentQuestionIndex] = optionIndex;
+            
+            // Update visual selection
+            const options = document.querySelectorAll('.option');
+            options.forEach(opt => opt.classList.remove('selected'));
+            options[optionIndex].classList.add('selected');
+            
+            // Update radio button
+            document.getElementById(`q${currentQuestionIndex}_${optionIndex}`).checked = true;
+            
+            updateProgress();
+            updateQuestionNavigator();
+        }
+
+        function nextQuestion() {
+            if (currentQuestionIndex < assessmentData.questions.length - 1) {
+                currentQuestionIndex++;
+                renderCurrentQuestion();
+            }
+        }
+
+        function prevQuestion() {
+            if (currentQuestionIndex > 0) {
+                currentQuestionIndex--;
+                renderCurrentQuestion();
+            }
+        }
+
+        function showReview() {
+            isReviewing = true;
+            document.getElementById('question-counter').textContent = 'Review Your Answers';
+
+            const reviewHtml = assessmentData.questions.map((q, index) => {
+                const userAnswerIndex = userAnswers[index];
+                const answerText = userAnswerIndex !== -1 
+                    ? q.options[userAnswerIndex] 
+                    : '<span class="unanswered">Not Answered</span>';
+                
+                return `
+                    <div class="review-question" id="review-q-${index}">
+                        <div class="review-question-content">
+                            <h5>${index + 1}. ${q.question.replace(/\n/g, '<br>')}</h5>
+                            <p class="selected-answer">${answerText}</p>
+                        </div>
+                        <div class="review-actions">
+                            <button class="btn-secondary" onclick="editQuestion(${index})">
+                                <i class="fas fa-edit"></i> Edit
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            document.getElementById('questions-container').innerHTML = reviewHtml;
+            
+            // Update buttons for review mode
+            document.getElementById('prev-question').classList.add('hidden');
+            document.getElementById('next-question').classList.add('hidden');
+            document.getElementById('back-to-assessment-btn').classList.remove('hidden');
+            document.getElementById('submit-assessment').classList.remove('hidden');
+        }
+
+        function editQuestion(index) {
+            isReviewing = false;
+            currentQuestionIndex = index;
+            renderCurrentQuestion();
+        }
+
+        function backToAssessment() {
+            isReviewing = false;
+            renderCurrentQuestion();
+        }
+
+        function updateProgress() {
+            const answered = userAnswers.filter(a => a !== -1).length;
+            const total = assessmentData.questions.length;
+            const progress = total > 0 ? (answered / total) * 100 : 0;
+            document.getElementById('progress-bar').style.width = progress + '%';
+            document.getElementById('progress-text').textContent = `${Math.round(progress)}%`;
+        }
+
+        async function submitAssessment() {
+            const unansweredIndex = userAnswers.indexOf(-1);
+            if (unansweredIndex !== -1) {
+                alert('Please answer all questions before submitting.');
+                if (!isReviewing) showReview();
+                setTimeout(() => {
+                    const unansweredEl = document.getElementById(`review-q-${unansweredIndex}`);
+                    if (unansweredEl) {
+                        unansweredEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        unansweredEl.style.border = '2px solid var(--danger)';
+                        unansweredEl.style.boxShadow = '0 0 10px var(--danger)';
+                    }
+                }, 100);
+                return;
+            }
+
+            clearInterval(timerInterval);
+
+            try {
+                const response = await fetch('/api/assess', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        answers: userAnswers,
+                        questions: assessmentData.questions,
+                        skills: assessmentData.skills
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.redirect) {
+                    window.location.href = data.redirect;
+                } else {
+                    alert('Error submitting assessment. Please try again.');
+                }
+            } catch (error) {
+                console.error('Assessment error:', error);
+                alert('Error submitting assessment. Please check server connection.');
+            }
+        }
+
+        function startTimer() {
+            timerInterval = setInterval(() => {
+                timeRemaining--;
+                const minutes = Math.floor(timeRemaining / 60);
+                const seconds = timeRemaining % 60;
+                document.getElementById('timer-display').textContent = 
+                    `${minutes}:${seconds.toString().padStart(2, '0')}`;
+                
+                if (timeRemaining <= 0) {
+                    clearInterval(timerInterval);
+                    alert('Time is up! Submitting your assessment...');
+                    submitAssessment();
+                }
+            }, 1000);
+        }
+
+        function setupSecurityMeasures() {
+            document.addEventListener('visibilitychange', () => {
+                if (document.hidden) {
+                    tabSwitchCount++;
+                    if (tabSwitchCount === 1) {
+                        document.getElementById('warning-modal').classList.remove('hidden');
+                    } else if (tabSwitchCount >= 2) {
+                        alert('Test terminated due to security violations.');
+                        window.location.href = '/';
+                    }
+                }
+            });
+        }
+
+        function closeWarning() {
+            document.getElementById('warning-modal').classList.add('hidden');
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Results - Skills Assessment Platform</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <a href="/">
+                    <img src="/Assets/Screenshot 2025-08-01 092513.png" alt="SMARRTIFAI" class="logo">
+                </a>
+            </div>
+            <div class="nav-steps">
+                <div class="step" id="step-1"><span>1</span> Upload</div>
+                <div class="step" id="step-2"><span>2</span> Assess</div>
+                <div class="step active" id="step-3"><span>3</span> Results</div>
+                <div class="step" id="step-4"><span>4</span> Roadmap</div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div id="results-section" class="section-card">
+            <div class="results-header">
+                <h2><i class="fas fa-chart-line"></i> Assessment Results</h2>
+            </div>
+            <div id="results-content" class="results-display"></div>
+            <div class="field-selection">
+                <h3>Choose Your Career Path</h3>
+                <div class="field-grid" id="field-grid"></div>
+            </div>
+            <div class="results-actions">
+                <button class="btn-primary" onclick="generateRoadmap()" id="generate-roadmap-btn" disabled>
+                    <i class="fas fa-route"></i> Generate Roadmap
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let resultsData = {};
+        let selectedField = '';
+
+        // Load results data on page load
+        window.addEventListener('load', async () => {
+            try {
+                const response = await fetch('/api/get_results_data');
+                resultsData = await response.json();
+                
+                if (!resultsData.level) {
+                    window.location.href = '/';
+                    return;
+                }
+
+                displayResults();
+            } catch (error) {
+                console.error('Failed to load results data:', error);
+                window.location.href = '/';
+            }
+        });
+
+        function displayResults() {
+            // Display assessment results
+            const resultsHtml = `
+                <div class="results-grid">
+                    <div class="result-card score-card">
+                        <div class="result-icon">
+                            <i class="fas fa-trophy"></i>
+                        </div>
+                        <div class="result-info">
+                            <h3>Overall Score</h3>
+                            <div class="score-display">
+                                <span class="score-number">${resultsData.percentage?.toFixed(1) || 0}%</span>
+                                <span class="score-total">${resultsData.score || 0}/${resultsData.total || 0}</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="result-card level-card">
+                        <div class="result-icon">
+                            <i class="fas fa-medal"></i>
+                        </div>
+                        <div class="result-info">
+                            <h3>Skill Level</h3>
+                            <div class="level-badge ${resultsData.level?.toLowerCase() || 'beginner'}">
+                                ${resultsData.level || 'Beginner'}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="analysis-section">
+                    <div class="strengths-section">
+                        <h4><i class="fas fa-check-circle"></i> Strengths</h4>
+                        <div class="skills-list">
+                            ${(resultsData.strengths || []).map(strength => 
+                                `<span class="skill-tag strength">${strength}</span>`
+                            ).join('')}
+                            ${(resultsData.strengths || []).length === 0 ? '<p>Continue building your skills!</p>' : ''}
+                        </div>
+                    </div>
+                    
+                    <div class="weaknesses-section">
+                        <h4><i class="fas fa-exclamation-triangle"></i> Areas for Improvement</h4>
+                        <div class="skills-list">
+                            ${(resultsData.weaknesses || []).map(weakness => 
+                                `<span class="skill-tag weakness">${weakness}</span>`
+                            ).join('')}
+                            ${(resultsData.weaknesses || []).length === 0 ? '<p>Great job! Keep up the good work!</p>' : ''}
+                        </div>
+                    </div>
+                    
+                    ${resultsData.skill_gaps && resultsData.skill_gaps.length > 0 ? `
+                    <div class="gaps-section">
+                        <h4><i class="fas fa-lightbulb"></i> Skill Gaps to Address</h4>
+                        <div class="skills-list">
+                            ${resultsData.skill_gaps.map(gap => 
+                                `<span class="skill-tag gap">${gap}</span>`
+                            ).join('')}
+                        </div>
+                    </div>
+                    ` : ''}
+                </div>
+            `;
+
+            document.getElementById('results-content').innerHTML = resultsHtml;
+
+            // Display tech field options
+            const techFields = resultsData.tech_fields || ['AI/ML', 'Business Analytics and Data Analytics', 'Gen AI', 'Agentic AI'];
+            const fieldsHtml = techFields.map(field => `
+                <div class="field-card" onclick="selectField('${field}')">
+                    <div class="field-icon">
+                        <i class="fas ${getFieldIcon(field)}"></i>
+                    </div>
+                    <h4>${field}</h4>
+                    <p>${getFieldDescription(field)}</p>
+                </div>
+            `).join('');
+
+            document.getElementById('field-grid').innerHTML = fieldsHtml;
+        }
+
+        function getFieldIcon(field) {
+            const icons = {
+                'AI/ML': 'fa-robot',
+                'Business Analytics and Data Analytics': 'fa-chart-bar',
+                'Gen AI': 'fa-brain',
+                'Agentic AI': 'fa-cogs'
+            };
+            return icons[field] || 'fa-code';
+        }
+
+        function getFieldDescription(field) {
+            const descriptions = {
+                'AI/ML': 'Machine Learning, Deep Learning, and AI Development',
+                'Business Analytics and Data Analytics': 'Data Analysis, Visualization, and Business Intelligence',
+                'Gen AI': 'Generative AI, LLMs, and Prompt Engineering',
+                'Agentic AI': 'Autonomous Agents and Multi-Agent Systems'
+            };
+            return descriptions[field] || 'Technology and Development';
+        }
+
+        function selectField(field) {
+            // Remove previous selection
+            document.querySelectorAll('.field-card').forEach(card => {
+                card.classList.remove('selected');
+            });
+            
+            // Add selection to clicked card
+            event.currentTarget.classList.add('selected');
+            selectedField = field;
+            
+            // Enable generate roadmap button
+            document.getElementById('generate-roadmap-btn').disabled = false;
+        }
+
+        async function generateRoadmap() {
+            if (!selectedField) {
+                alert('Please select a career path first');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/roadmap', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        tech_field: selectedField
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.redirect) {
+                    window.location.href = data.redirect;
+                } else {
+                    alert('Error generating roadmap. Please try again.');
+                }
+            } catch (error) {
+                console.error('Roadmap generation error:', error);
+                alert('Error generating roadmap. Please check server connection.');
+            }
+        }
+    </script>
+</body>
+</html>
