@@ -18,7 +18,7 @@ class Config:
 # Initialize Flask App
 app = Flask(__name__)
 app.config.from_object(Config)
-app.secret_key = 'your-secret-key-here'
+app.secret_key = os.environ.get('SECRET_KEY', 'your-secret-key-here')
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 # Initialize Groq Client
@@ -1116,11 +1116,16 @@ def clear_session():
     return jsonify({'success': True})
 
 if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 5000))
+    debug = os.environ.get('FLASK_ENV') == 'development'
+    
     print('\n🚀 Starting Skills Assessment Platform...')
-    print('📍 Server available at: http://localhost:5000')
-    print('📍 Network access at: http://0.0.0.0:5000')
+    print(f'📍 Server starting on port: {port}')
+    if debug:
+        print('📍 Development mode enabled')
     print('\n💡 Make sure to:')
     print('   • Check your internet connection')
-    print('   • Allow firewall access if prompted')
+    print('   • Set GROQ_API_KEY environment variable')
     print('   • Upload a technical resume for best results\n')
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    
+    app.run(debug=debug, host='0.0.0.0', port=port)
