@@ -68,7 +68,11 @@
                 const response = await fetch('/api/get_roadmap_data');
                 roadmapData = await response.json();
                 
+                console.log('Roadmap data received:', roadmapData);
+                
                 if (!roadmapData.field) {
+                    console.error('No field found in roadmap data, redirecting to home');
+                    alert('No roadmap data found. Please complete the assessment first.');
                     window.location.href = '/';
                     return;
                 }
@@ -76,6 +80,7 @@
                 displayRoadmap();
             } catch (error) {
                 console.error('Failed to load roadmap data:', error);
+                alert('Error loading roadmap data. Please try again.');
                 window.location.href = '/';
             }
         });
@@ -209,10 +214,13 @@
             `;
 
             document.getElementById('roadmap-content').innerHTML = roadmapHtml;
-            
-            // Apply blur effect to roadmap content
-            document.getElementById('roadmap-content').classList.add('blurred');
-            document.getElementById('roadmap-lock-overlay').classList.remove('hidden');
+
+            // If payment confirmed, show full roadmap, else lock
+            if (roadmapData.unlocked) {
+                unlockUI();
+            } else {
+                lockUI();
+            }
         }
 
         function getEstimatedTimeline() {
@@ -276,14 +284,28 @@
             }
         }
 
-        function unlockRoadmap() {
-            // Simulate unlock (remove blur and overlay)
+        function lockUI() {
+            document.getElementById('roadmap-content').classList.add('blurred');
+            document.getElementById('roadmap-lock-overlay').classList.remove('hidden');
+            document.getElementById('download-roadmap-btn').disabled = true;
+        }
+
+        function unlockUI() {
             document.getElementById('roadmap-content').classList.remove('blurred');
             document.getElementById('roadmap-lock-overlay').classList.add('hidden');
             document.getElementById('download-roadmap-btn').disabled = false;
-            
-            // Show success message
-            alert('🎉 Roadmap unlocked! You now have full access to your personalized career path.');
+        }
+
+        async function unlockRoadmap() {
+            try {
+                const resp = await fetch('/api/payment/create', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+                const data = await resp.json();
+                if (data.redirect) {
+                    window.location.href = data.redirect;
+                }
+            } catch (e) {
+                alert('Unable to start payment right now. Please try again.');
+            }
         }
     </script>
 </body>

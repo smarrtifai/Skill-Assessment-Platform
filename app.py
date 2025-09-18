@@ -712,6 +712,25 @@ def roadmap_page():
     """Roadmap page."""
     return render_template('roadmap.html')
 
+# ----- Flowchart alignment helpers (non-breaking stubs) -----
+@app.route('/api/send_assessment_link', methods=['POST'])
+def send_assessment_link():
+    """Simulate sending assessment link to user's email as per flowchart.
+    No external email is sent; we just acknowledge and provide a link token.
+    """
+    data = request.json or {}
+    email = data.get('email', '').strip()
+    token = str(uuid.uuid4())
+    session['assessment_link_token'] = token
+    # In a real system, an email would be sent with this URL
+    link = url_for('assessment_page', _external=False)
+    return jsonify({
+        'success': True,
+        'message': f'Assessment link sent to {email or "your email"}.',
+        'link': link,
+        'token': token
+    })
+
 @app.route('/Assets/<filename>')
 def assets(filename):
     """Serve assets files."""
@@ -1049,13 +1068,71 @@ def generate_roadmap():
     skill_level = results.get('level', 'Beginner')
     skills = results.get('skills', [])
     
+    print(f"🔧 Roadmap generation - tech_field: {tech_field}")
+    print(f"🔧 Roadmap generation - results: {results}")
+    print(f"🔧 Roadmap generation - skill_level: {skill_level}")
+    
+    if not tech_field:
+        print("❌ No tech_field provided")
+        return jsonify({'error': 'No tech field selected'}), 400
+    
+    if not results:
+        print("❌ No assessment results found")
+        return jsonify({'error': 'No assessment results found. Please complete assessment first.'}), 400
+    
     session['tech_field'] = tech_field
     
     # AI Processing: Create personalized roadmap with learning resources, project ideas, timelines
     roadmap = RoadmapGenerator.generate_roadmap_with_groq(tech_field, skill_level, skills)
     session['roadmap_data'] = roadmap
     
+    print(f"✅ Roadmap generated successfully: {roadmap.get('field', 'No field')}")
+    
     return jsonify({'redirect': '/roadmap'})
+
+@app.route('/api/payment/create', methods=['POST'])
+def create_payment_link():
+    """Simulate generating a payment link and redirecting to a payment page."""
+    token = str(uuid.uuid4())
+    session['payment_token'] = token
+    pay_url = url_for('payment_page', token=token)
+    return jsonify({'redirect': pay_url})
+
+@app.route('/pay')
+def payment_page():
+    """Simple payment page that confirms payment (stub)."""
+    token = request.args.get('token', '')
+    # Only allow if token matches what we created
+    if token and session.get('payment_token') == token:
+        return render_template('payment.html', token=token)
+    return redirect(url_for('index'))
+
+@app.route('/payment/confirm', methods=['POST'])
+def confirm_payment():
+    """Confirm payment and mark roadmap as unlocked. Simulates gateway callback."""
+    token = request.json.get('token') if request.is_json else request.form.get('token')
+    if token and session.get('payment_token') == token:
+        session['payment_confirmed'] = True
+        session['roadmap_unlocked'] = True
+        return jsonify({'redirect': url_for('roadmap_page')})
+    return jsonify({'error': 'Invalid payment token'}), 400
+
+@app.route('/api/send_full_roadmap_email', methods=['POST'])
+def send_full_roadmap_email():
+    """Simulate emailing the full roadmap to the user after payment."""
+    if not session.get('roadmap_unlocked'):
+        return jsonify({'error': 'Roadmap not unlocked yet'}), 400
+    # Create a text export similar to download and pretend to email
+    data = session.get('roadmap_data', {})
+    filename = f"roadmap_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    content = f"Full roadmap for {data.get('field','N/A')} generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+    try:
+        with open(filepath, 'w') as f:
+            f.write(content)
+    except Exception:
+        pass
+    return jsonify({'success': True, 'message': 'Full roadmap emailed (simulated).', 'attachment': filename})
 
 @app.route('/api/download_roadmap', methods=['POST'])
 def download_roadmap():
@@ -1107,7 +1184,11 @@ def get_results_data():
 @app.route('/api/get_roadmap_data')
 def get_roadmap_data():
     """Get roadmap data for current session."""
-    return jsonify(session.get('roadmap_data', {}))
+    data = session.get('roadmap_data', {})
+    # Add unlocked flag to align with flowchart after payment confirmation
+    wrapped = dict(data)
+    wrapped['unlocked'] = bool(session.get('roadmap_unlocked'))
+    return jsonify(wrapped)
 
 @app.route('/api/clear_session', methods=['POST'])
 def clear_session():

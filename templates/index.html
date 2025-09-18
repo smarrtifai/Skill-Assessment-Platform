@@ -246,6 +246,10 @@
         }
 
         async function startInterestBasedAssessment() {
+            showCameraPermissionModal(() => proceedWithInterestAssessment());
+        }
+
+        async function proceedWithInterestAssessment() {
             try {
                 const response = await fetch('/api/assessment/interest-based', {
                     method: 'POST',
@@ -263,6 +267,43 @@
                 console.error('Assessment start error:', error);
                 alert('Error starting assessment. Please try again.');
             }
+        }
+
+        function showCameraPermissionModal(onAllow) {
+            const modal = document.createElement('div');
+            modal.className = 'modal-overlay';
+            modal.innerHTML = `
+                <div class="modal-content">
+                    <div class="modal-icon">
+                        <i class="fas fa-video" style="color: var(--primary); font-size: 3rem;"></i>
+                    </div>
+                    <h3>Camera Access Required</h3>
+                    <p>This assessment requires camera monitoring for security and proctoring purposes. Your privacy is protected.</p>
+                    <div class="modal-actions">
+                        <button class="btn-primary" onclick="allowCameraAndProceed()">
+                            <i class="fas fa-video"></i> Allow Camera & Continue
+                        </button>
+                        <button class="btn-secondary" onclick="cancelAssessment()">
+                            <i class="fas fa-times"></i> Cancel
+                        </button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+            
+            window.allowCameraAndProceed = async () => {
+                try {
+                    await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                    modal.remove();
+                    onAllow();
+                } catch (error) {
+                    alert('Camera access is required. Please allow camera permissions.');
+                }
+            };
+            
+            window.cancelAssessment = () => {
+                modal.remove();
+            };
         }
 
         // Add quick start button for interest-based assessment

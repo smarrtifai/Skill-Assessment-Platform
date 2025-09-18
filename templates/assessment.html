@@ -35,6 +35,19 @@
         </div>
     </div>
 
+    <div id="proctoring-container" class="proctoring-widget">
+        <div class="proctoring-header">
+            <div id="camera-status">Initializing Camera...</div>
+            <button class="minimize-btn" onclick="toggleProctoring()">
+                <i class="fas fa-minus"></i>
+            </button>
+        </div>
+        <video id="proctoring-video" class="proctoring-video" muted></video>
+        <div class="proctoring-info">
+            <small><i class="fas fa-shield-alt"></i> Secure Assessment</small>
+        </div>
+    </div>
+
     <div class="container">
         <div id="assessment-section" class="section-card">
             <div class="assessment-header">
@@ -100,6 +113,16 @@
         let isReviewing = false;
         let tabSwitchCount = 0;
 
+        // Refresh detection - terminate test if page is refreshed
+        let isTestStarted = false;
+        
+        // Check if test was already started in this session
+        if (sessionStorage.getItem('testStarted') === 'true') {
+            alert('Test session terminated due to page refresh. This is a security violation.');
+            sessionStorage.removeItem('testStarted');
+            window.location.href = '/';
+        }
+
         // Load assessment data on page load
         window.addEventListener('load', async () => {
             try {
@@ -111,6 +134,10 @@
                     return;
                 }
 
+                // Mark test as started
+                sessionStorage.setItem('testStarted', 'true');
+                isTestStarted = true;
+                
                 initializeAssessment();
             } catch (error) {
                 console.error('Failed to load assessment data:', error);
@@ -358,6 +385,10 @@
             }
 
             clearInterval(timerInterval);
+            
+            // Clear test started flag before submission
+            sessionStorage.removeItem('testStarted');
+            isTestStarted = false;
 
             try {
                 const response = await fetch('/api/assess', {
@@ -393,6 +424,8 @@
                 
                 if (timeRemaining <= 0) {
                     clearInterval(timerInterval);
+                    sessionStorage.removeItem('testStarted');
+                    isTestStarted = false;
                     alert('Time is up! Submitting your assessment...');
                     submitAssessment();
                 }
@@ -400,21 +433,177 @@
         }
 
         function setupSecurityMeasures() {
+            // Tab switching detection
             document.addEventListener('visibilitychange', () => {
                 if (document.hidden) {
                     tabSwitchCount++;
                     if (tabSwitchCount === 1) {
                         document.getElementById('warning-modal').classList.remove('hidden');
                     } else if (tabSwitchCount >= 2) {
+                        sessionStorage.removeItem('testStarted');
+                        isTestStarted = false;
                         alert('Test terminated due to security violations.');
                         window.location.href = '/';
                     }
                 }
             });
+            
+            // Initialize camera monitoring
+            initializeCameraMonitoring();
+        }
+
+        async function initializeCameraMonitoring() {
+            // Show permission request modal first
+            showCameraPermissionModal();
+        }
+
+        function showCameraPermissionModal() {
+            const modal = document.createElement('div');
+            modal.className = 'modal-overlay';
+            modal.innerHTML = `
+                <div class="modal-content">
+                    <div class="modal-icon">
+                        <i class="fas fa-video" style="color: var(--primary); font-size: 3rem;"></i>
+                    </div>
+                    <h3>Camera Access Required</h3>
+                    <p>This assessment requires camera monitoring for security purposes. Please allow camera access to continue.</p>
+                    <div class="modal-actions">
+                        <button class="btn-primary" onclick="requestCameraAccess()">
+                            <i class="fas fa-video"></i> Allow Camera Access
+                        </button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+
+        async function requestCameraAccess() {
+            // Remove permission modal
+            document.querySelector('.modal-overlay').remove();
+            
+            try {
+                // Request camera permission explicitly
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        width: { ideal: 320 }, 
+                        height: { ideal: 240 },
+                        facingMode: 'user'
+                    }, 
+                    audio: false 
+                });
+                
+                const videoElement = document.getElementById('proctoring-video');
+                videoElement.srcObject = stream;
+                await videoElement.play();
+                
+                document.getElementById('camera-status').innerHTML = 
+                    '<i class="fas fa-video" style="color: #10b981;"></i> Camera Active';
+                
+                startPeriodicCapture(videoElement);
+                
+            } catch (error) {
+                console.error('Camera access error:', error);
+                document.getElementById('camera-status').innerHTML = 
+                    '<i class="fas fa-video-slash" style="color: #ef4444;"></i> Access Denied';
+                
+                // Show error modal
+                showCameraErrorModal(error.name);
+            }
+        }
+
+        function showCameraErrorModal(errorType) {
+            const modal = document.createElement('div');
+            modal.className = 'modal-overlay';
+            
+            let errorMessage = 'Camera access was denied. This assessment requires camera monitoring.';
+            if (errorType === 'NotFoundError') {
+                errorMessage = 'No camera found on this device. Please use a device with a camera.';
+            } else if (errorType === 'NotAllowedError') {
+                errorMessage = 'Camera permission denied. Please refresh the page and allow camera access.';
+            }
+            
+            modal.innerHTML = `
+                <div class="modal-content">
+                    <div class="modal-icon warning">
+                        <i class="fas fa-exclamation-triangle"></i>
+                    </div>
+                    <h3>Camera Access Required</h3>
+                    <p>${errorMessage}</p>
+                    <div class="modal-actions">
+                        <button class="btn-primary" onclick="location.reload()">
+                            <i class="fas fa-refresh"></i> Refresh Page
+                        </button>
+                        <button class="btn-secondary" onclick="window.location.href='/'">
+                            <i class="fas fa-home"></i> Go Home
+                        </button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+
+        function startPeriodicCapture(videoElement) {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = 320;
+            canvas.height = 240;
+            
+            // Capture frame every 30 seconds
+            setInterval(() => {
+                if (videoElement.videoWidth > 0) {
+                    ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+                    // Optional: Send frame to server for analysis
+                    // const imageData = canvas.toDataURL('image/jpeg', 0.5);
+                    // sendFrameToServer(imageData);
+                }
+            }, 30000);
         }
 
         function closeWarning() {
             document.getElementById('warning-modal').classList.add('hidden');
+        }
+
+        function toggleProctoring() {
+            const container = document.getElementById('proctoring-container');
+            const video = document.getElementById('proctoring-video');
+            const btn = container.querySelector('.minimize-btn i');
+            
+            if (container.classList.contains('minimized')) {
+                container.classList.remove('minimized');
+                video.style.display = 'block';
+                btn.className = 'fas fa-minus';
+            } else {
+                container.classList.add('minimized');
+                video.style.display = 'none';
+                btn.className = 'fas fa-plus';
+            }
+        }
+
+        function stopCameraMonitoring() {
+            const videoElement = document.getElementById('proctoring-video');
+            if (videoElement.srcObject) {
+                const tracks = videoElement.srcObject.getTracks();
+                tracks.forEach(track => track.stop());
+                videoElement.srcObject = null;
+            }
+        }
+
+        // Clean up when leaving assessment
+        window.addEventListener('beforeunload', () => {
+            stopCameraMonitoring();
+            // Clear test started flag only if test is being submitted normally
+            if (isTestStarted) {
+                sessionStorage.removeItem('testStarted');
+            }
+        });
+
+        function stopCameraMonitoring() {
+            const videoElement = document.getElementById('proctoring-video');
+            if (videoElement.srcObject) {
+                const tracks = videoElement.srcObject.getTracks();
+                tracks.forEach(track => track.stop());
+                videoElement.srcObject = null;
+            }
         }
     </script>
 </body>

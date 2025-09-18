@@ -109,7 +109,8 @@ body {
 
 /* Onboarding Styles */
 .onboarding-section {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    
+    background: linear-gradient(135deg, #ef4444 0%, #f97316 100%);
     border-radius: 25px;
     padding: 3rem;
     margin: 2rem 0;
@@ -764,8 +765,8 @@ body {
     box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
     border: 1px solid rgba(239, 68, 68, 0.1);
     transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-    opacity: 0.6;
-    transform: scale(0.98);
+    opacity: 1;
+    transform: scale(1);
     position: relative;
     overflow: hidden;
 }
@@ -987,6 +988,81 @@ body {
     box-shadow: var(--shadow);
     border: 1px solid var(--border);
     z-index: 50;
+}
+
+/* Proctoring Widget */
+.proctoring-widget {
+    position: fixed;
+    top: 100px;
+    left: 2rem;
+    background: white;
+    border-radius: 15px;
+    box-shadow: var(--shadow);
+    border: 1px solid var(--border);
+    z-index: 50;
+    width: 250px;
+    transition: all 0.3s ease;
+}
+
+.proctoring-widget.minimized {
+    height: 60px;
+    overflow: hidden;
+}
+
+.proctoring-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(135deg, #f8fafc, #e2e8f0);
+    border-radius: 15px 15px 0 0;
+}
+
+#camera-status {
+    font-size: 0.875rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.minimize-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0.25rem;
+    border-radius: 4px;
+    color: var(--text-light);
+    transition: all 0.2s ease;
+}
+
+.minimize-btn:hover {
+    background: rgba(0, 0, 0, 0.1);
+    color: var(--text);
+}
+
+.proctoring-video {
+    width: 100%;
+    height: 140px;
+    object-fit: cover;
+    background: #000;
+}
+
+.proctoring-info {
+    padding: 0.75rem 1rem;
+    text-align: center;
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.05), rgba(249, 115, 22, 0.03));
+    border-radius: 0 0 15px 15px;
+}
+
+.proctoring-info small {
+    color: var(--text-light);
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
 }
 
 .timer-content {
@@ -1680,10 +1756,10 @@ body {
 }
 
 .roadmap-display.blurred {
-    filter: blur(5px);
-    -webkit-filter: blur(5px);
-    pointer-events: none;
-    opacity: 0.6;
+    filter: none;
+    -webkit-filter: none;
+    pointer-events: auto;
+    opacity: 1;
     transition: all 0.3s ease;
 }
 
