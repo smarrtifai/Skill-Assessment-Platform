@@ -96,26 +96,26 @@
     color: var(--text);
 }
 
-.resources-section, .projects-section {
+.resources-section, .projects-section, .validation-section {
     margin: 1.5rem 0;
     padding: 1rem;
     background: rgba(239, 68, 68, 0.05);
     border-radius: 8px;
 }
 
-.resources-section h5, .projects-section h5 {
+.resources-section h5, .projects-section h5, .validation-section h5 {
     font-size: 1rem;
     font-weight: 600;
     color: var(--dark);
     margin-bottom: 0.75rem;
 }
 
-.resources-section ul, .projects-section ul {
+.resources-section ul, .projects-section ul, .validation-section ul {
     list-style: none;
     padding-left: 0;
 }
 
-.resources-section li, .projects-section li {
+.resources-section li, .projects-section li, .validation-section li {
     padding: 0.25rem 0;
     font-size: 0.9rem;
     color: var(--text);
@@ -123,7 +123,7 @@
     padding-left: 1.5rem;
 }
 
-.resources-section li::before, .projects-section li::before {
+.resources-section li::before, .projects-section li::before, .validation-section li::before {
     content: '•';
     position: absolute;
     left: 0;
@@ -214,4 +214,74 @@
 .meta-item strong {
     color: var(--dark);
     font-weight: 600;
+}
+
+/* Additional Resources Styles */
+.additional-resources {
+    background: white;
+    border-radius: 15px;
+    padding: 2rem;
+    margin-top: 2rem;
+    border: 1px solid var(--border);
+}
+
+.additional-resources h3 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: var(--dark);
+    margin-bottom: 1.5rem;
+    text-align: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+}
+
+.resources-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 1.5rem;
+}
+
+.resource-category {
+    background: #f8fafc;
+    padding: 1.5rem;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+}
+
+.resource-category h4 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--dark);
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.resource-category ul {
+    list-style: none;
+    padding-left: 0;
+}
+
+.resource-category li {
+    padding: 0.5rem 0;
+    font-size: 0.9rem;
+    color: var(--text);
+    position: relative;
+    padding-left: 1.5rem;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.resource-category li:last-child {
+    border-bottom: none;
+}
+
+.resource-category li::before {
+    content: '→';
+    position: absolute;
+    left: 0;
+    color: var(--primary);
+    font-weight: bold;
 }

@@ -205,7 +205,11 @@ TECH_FIELDS = {
 SAMPLE_QUESTIONS = {
     'python': {
         'technical': [
-            {'question': 'What is the output of print(type([]))?', 'options': ['<class "list">', '<class "dict">', '<class "tuple">', '<class "set">'], 'correct': 0},
+            {
+    "question": "What will be the output of the following code?\n\nx = [1, 2, 3]\nprint(x * 2)",
+    "options": ['[1, 2, 3, 1, 2, 3]', '[2, 4, 6]', 'Error', '[1, 1, 2, 2, 3, 3]'],
+    "correct": 0
+} ,
             {'question': 'Which keyword is used to define a function in Python?', 'options': ['function', 'def', 'define', 'func'], 'correct': 1},
             {'question': 'What does len() function return?', 'options': ['Size in bytes', 'Number of elements', 'Memory address', 'Data type'], 'correct': 1},
             {'question': 'Which Python data structure is ordered and mutable?', 'options': ['tuple', 'list', 'set', 'frozenset'], 'correct': 1},
@@ -649,7 +653,115 @@ class RoadmapGenerator:
     
     @staticmethod
     def generate_roadmap_with_groq(tech_field, skill_level, skills):
-        """Generate roadmap using fallback for speed."""
+        """Generate detailed learning roadmap using Groq API."""
+        if not client:
+            print("⚠️ Groq client not available. Using fallback roadmap.")
+            return RoadmapGenerator.get_fallback_roadmap(tech_field, skill_level)
+
+        skills_str = ", ".join(skills) if skills else "General technical skills"
+        
+        prompt = f"""
+You are a senior career mentor and expert curriculum designer. 
+Create a **detailed, professional learning roadmap** for a beginner who wants to go from absolute basics to an advanced level in **{tech_field}**. 
+
+📌 **Context**:
+- User's current skill level: {skill_level}
+- Identified skills: {skills_str}
+
+🎯 **Your Goal**:
+Design a step-by-step learning path that:
+- Covers fundamentals, intermediate, and advanced topics in a logical sequence.
+- Includes hands-on projects and challenges at every stage.
+- Stays engaging, motivating, and achievable for a self-learner.
+
+✅ **Roadmap Requirements**:
+1. **Foundational Stage (Beginner)**  
+   - Core topics explained simply  
+   - Practical exercises, small tasks, and real-life examples  
+
+2. **Intermediate Stage**  
+   - More challenging topics, industry best practices  
+   - Small-to-medium projects that build confidence  
+
+3. **Advanced Stage**  
+   - Expert-level techniques, tools, and optimization strategies  
+   - Complex projects that can be added to a professional portfolio  
+
+4. **Skill Validation**  
+   - Self-assessment methods: quizzes, challenges, peer review, certifications  
+
+5. **Learning Resources**  
+   - Specific recommendations: books, blogs, YouTube channels, online courses, communities  
+
+6. **Timeline**  
+   - Approximate time for each stage assuming 5-10 hours/week  
+
+7. **Output Format**  
+Return a **valid JSON object** with the following structure only, no explanations, no markdown:
+
+{{
+  "field": "{tech_field}",
+  "current_level": "{skill_level}",
+  "roadmap": {{
+    "beginner": ["Step-by-step beginner learning items with examples and exercises"],
+    "intermediate": ["Step-by-step intermediate learning items with projects"],
+    "advanced": ["Step-by-step advanced learning items with portfolio projects"]
+  }},
+  "timeline": {{
+    "beginner": "X-Y months",
+    "intermediate": "X-Y months", 
+    "advanced": "X+ months"
+  }},
+  "learning_resources": {{
+    "beginner": ["Specific beginner resources"],
+    "intermediate": ["Intermediate resources"],
+    "advanced": ["Advanced resources"]
+  }},
+  "project_ideas": {{
+    "beginner": ["Beginner project ideas"],
+    "intermediate": ["Intermediate project ideas"],
+    "advanced": ["Advanced project ideas"]
+  }},
+  "skill_validation": {{
+    "beginner": ["Quizzes", "Hands-on tasks"],
+    "intermediate": ["Portfolio projects", "Peer reviews"],
+    "advanced": ["Open-source contributions", "Certifications"]
+  }},
+  "recommended_skills": ["List of most important skills to master"]
+}}
+"""
+        try:
+            print(f"🧠 Generating detailed roadmap for {tech_field} with Groq...")
+            chat_completion = client.chat.completions.create(
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are a JSON generator for detailed learning roadmaps. You will only output a valid JSON object with the specified structure."
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt,
+                    }
+                ],
+                model="llama3-70b-8192",
+                temperature=0.7,
+                response_format={"type": "json_object"},
+            )
+            
+            response_content = chat_completion.choices[0].message.content
+            parsed_json = json.loads(response_content)
+
+            # Validate the response structure
+            required_fields = ['field', 'current_level', 'roadmap', 'timeline', 'learning_resources', 'project_ideas']
+            if not all(field in parsed_json for field in required_fields):
+                print("🚨 Groq response missing required fields. Using fallback.")
+                return RoadmapGenerator.get_fallback_roadmap(tech_field, skill_level)
+
+            print(f"✅ Successfully generated detailed roadmap from Groq for {tech_field}.")
+            return parsed_json
+
+        except Exception as e:
+            print(f"🚨 Groq API call failed: {e}. Using fallback roadmap.")
         return RoadmapGenerator.get_fallback_roadmap(tech_field, skill_level)
 
     @staticmethod
@@ -718,17 +830,15 @@ def send_assessment_link():
     """Simulate sending assessment link to user's email as per flowchart.
     No external email is sent; we just acknowledge and provide a link token.
     """
-    data = request.json or {}
-    email = data.get('email', '').strip()
-    token = str(uuid.uuid4())
-    session['assessment_link_token'] = token
-    # In a real system, an email would be sent with this URL
-    link = url_for('assessment_page', _external=False)
+    # In a real system, you would integrate an email service like SendGrid or Mailgun here.
+    # For this simulation, we'll just confirm the action.
+    session['assessment_link_sent'] = True
     return jsonify({
         'success': True,
-        'message': f'Assessment link sent to {email or "your email"}.',
-        'link': link,
-        'token': token
+        'message': 'An assessment link has been sent to your email (simulated).',
+        # In a real app, you'd redirect to a "check your email" page.
+        # For this flow, we'll just proceed.
+        'redirect': url_for('upload_page')
     })
 
 @app.route('/Assets/<filename>')
@@ -1087,16 +1197,20 @@ def generate_roadmap():
     session['roadmap_data'] = roadmap
     
     print(f"✅ Roadmap generated successfully: {roadmap.get('field', 'No field')}")
+    print(f"🔍 Roadmap data structure: {list(roadmap.keys())}")
+    print(f"🔍 Roadmap field value: {roadmap.get('field')}")
+    print(f"🔍 Session roadmap_data: {session.get('roadmap_data', {}).get('field')}")
     
     return jsonify({'redirect': '/roadmap'})
 
 @app.route('/api/payment/create', methods=['POST'])
 def create_payment_link():
     """Simulate generating a payment link and redirecting to a payment page."""
+    # In a real app, you'd call a payment provider (Stripe, Razorpay) here.
     token = str(uuid.uuid4())
     session['payment_token'] = token
-    pay_url = url_for('payment_page', token=token)
-    return jsonify({'redirect': pay_url})
+    payment_url = url_for('payment_page', token=token, _external=True)
+    return jsonify({'redirect_url': payment_url})
 
 @app.route('/pay')
 def payment_page():
@@ -1111,7 +1225,10 @@ def payment_page():
 def confirm_payment():
     """Confirm payment and mark roadmap as unlocked. Simulates gateway callback."""
     token = request.json.get('token') if request.is_json else request.form.get('token')
-    if token and session.get('payment_token') == token:
+    # In a real app, this would be a webhook from the payment provider.
+    # For simulation, we check the session token.
+    if token and session.get('payment_token') == token and not session.get('payment_confirmed'):
+        print(f"✅ Payment confirmed for token: {token}")
         session['payment_confirmed'] = True
         session['roadmap_unlocked'] = True
         return jsonify({'redirect': url_for('roadmap_page')})
@@ -1187,7 +1304,24 @@ def get_roadmap_data():
     data = session.get('roadmap_data', {})
     # Add unlocked flag to align with flowchart after payment confirmation
     wrapped = dict(data)
-    wrapped['unlocked'] = bool(session.get('roadmap_unlocked'))
+    is_unlocked = bool(session.get('roadmap_unlocked'))
+    wrapped['unlocked'] = is_unlocked
+
+    # If not unlocked, only return the beginner module
+    if not is_unlocked and 'roadmap' in wrapped and isinstance(wrapped['roadmap'], dict):
+        beginner_roadmap = wrapped['roadmap'].get('beginner', [])
+        wrapped['roadmap'] = {'beginner': beginner_roadmap}
+        # Also clear other related data if not unlocked
+        wrapped['timeline'] = {'beginner': wrapped.get('timeline', {}).get('beginner', 'N/A')}
+        wrapped['learning_resources'] = {'beginner': wrapped.get('learning_resources', {}).get('beginner', [])}
+        wrapped['project_ideas'] = {'beginner': wrapped.get('project_ideas', {}).get('beginner', [])}
+        wrapped['skill_validation'] = {'beginner': wrapped.get('skill_validation', {}).get('beginner', [])}
+        wrapped['recommended_skills'] = wrapped.get('recommended_skills', []) # Keep all recommended skills
+
+    print(f"🔍 get_roadmap_data - Session keys: {list(session.keys())}")
+    print(f"🔍 get_roadmap_data - Roadmap data: {data}")
+    print(f"🔍 get_roadmap_data - Wrapped data: {wrapped}")
+    
     return jsonify(wrapped)
 
 @app.route('/api/clear_session', methods=['POST'])

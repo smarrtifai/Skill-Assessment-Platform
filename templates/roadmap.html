@@ -8,6 +8,64 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/roadmap-styles.css') }}">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* Extra UI Enhancements */
+        .module-header { cursor: pointer; transition: background 0.3s ease; }
+        .module-header:hover { background: rgba(0, 0, 0, 0.03); }
+        .module-content.collapsed { display: none; }
+        .fade-in { animation: fadeIn 0.6s ease-in-out; }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .skill-tag {
+            display: inline-block;
+            background: #eef3ff;
+            color: #2c3e50;
+            border-radius: 12px;
+            padding: 4px 10px;
+            margin: 3px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .progress-bar {
+            background: #e4e8f1;
+            border-radius: 10px;
+            height: 8px;
+            margin-top: 8px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            background: linear-gradient(90deg, #4e8ef7, #275efe);
+            height: 100%;
+            width: 0%;
+            transition: width 0.6s ease;
+        }
+        .module-lock-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(4px);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            border-radius: 15px;
+            z-index: 10;
+            cursor: pointer;
+            transition: opacity 0.3s ease;
+        }
+        .module-lock-overlay:hover { opacity: 0.9; }
+        .learning-module { position: relative; }
+        .hidden {
+            display: none;
+        }
+    </style>
 </head>
 <body>
     <nav class="navbar">
@@ -18,37 +76,60 @@
                 </a>
             </div>
             <div class="nav-steps">
-                <div class="step" id="step-1"><span>1</span> Upload</div>
-                <div class="step" id="step-2"><span>2</span> Assess</div>
-                <div class="step" id="step-3"><span>3</span> Results</div>
-                <div class="step active" id="step-4"><span>4</span> Roadmap</div>
+                <div class="step"><span>1</span> Upload</div>
+                <div class="step"><span>2</span> Assess</div>
+                <div class="step"><span>3</span> Results</div>
+                <div class="step active"><span>4</span> Roadmap</div>
             </div>
         </div>
     </nav>
 
     <div class="container">
-        <div id="roadmap-section" class="section-card">
-            <div class="roadmap-header">
-                <h2><i class="fas fa-map-marked-alt"></i> Your Career Roadmap</h2>
-                <p>Personalized learning path based on your skills and goals</p>
-            </div>
-            <div id="roadmap-content-wrapper">
-                <div id="roadmap-content" class="roadmap-display"></div>
-                <div id="roadmap-lock-overlay" class="hidden">
-                    <div class="lock-content">
-                        <i class="fas fa-lock"></i>
-                        <h3>Unlock Your Full Career Roadmap</h3>
-                        <p>Get access to detailed learning paths, resources, and personalized recommendations</p>
-                        <button class="btn-primary" onclick="unlockRoadmap()">
-                            <i class="fas fa-crown"></i> Upgrade to Pro
-                        </button>
+        <div class="roadmap-hero fade-in">
+            <div class="hero-content">
+                <div class="hero-icon"><i class="fas fa-map-marked-alt"></i></div>
+                <h1>Your Personalized Career Roadmap</h1>
+                <p class="hero-subtitle">A structured journey from beginner to expert – with curated resources and projects</p>
+                <div class="hero-stats">
+                    <div class="stat-item">
+                        <span class="stat-number" id="total-modules">3</span>
+                        <span class="stat-label">Learning Modules</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-number" id="estimated-hours">120+</span>
+                        <span class="stat-label">Learning Hours</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-number" id="skill-level">Beginner</span>
+                        <span class="stat-label">Current Level</span>
                     </div>
                 </div>
             </div>
+        </div>
+
+        <!-- Roadmap Section -->
+        <div id="roadmap-section" class="section-card roadmap-main fade-in">
+            <div class="roadmap-header">
+                <div class="header-content">
+                    <h2><i class="fas fa-graduation-cap"></i> Your Learning Journey</h2>
+                    <p>Click on each module to expand and view detailed topics, projects, and resources</p>
+                </div>
+                <div class="progress-indicator">
+                    <div class="progress-circle"><span class="progress-text">0%</span></div>
+                    <span class="progress-label">Complete</span>
+                </div>
+            </div>
+
+            <div id="roadmap-content-wrapper">
+                <div id="roadmap-content" class="roadmap-display"></div>
+            </div>
+
             <div class="roadmap-actions">
-                <button class="btn-primary" id="download-roadmap-btn" onclick="downloadRoadmap()" disabled>
-                    <i class="fas fa-download"></i> Download Roadmap
-                </button>
+                <button class="btn-primary" id="download-roadmap-btn" onclick="handleDownloadRoadmapClick()">
+    <i class="fas fa-download"></i> Download Roadmap
+</button>
+
+
                 <button class="btn-secondary" onclick="shareRoadmap()">
                     <i class="fas fa-share-alt"></i> Share
                 </button>
@@ -62,249 +143,158 @@
     <script>
         let roadmapData = {};
 
-        // Load roadmap data on page load
         window.addEventListener('load', async () => {
-            try {
-                const response = await fetch('/api/get_roadmap_data');
-                roadmapData = await response.json();
-                
-                console.log('Roadmap data received:', roadmapData);
-                
-                if (!roadmapData.field) {
-                    console.error('No field found in roadmap data, redirecting to home');
-                    alert('No roadmap data found. Please complete the assessment first.');
-                    window.location.href = '/';
-                    return;
-                }
-
-                displayRoadmap();
-            } catch (error) {
-                console.error('Failed to load roadmap data:', error);
-                alert('Error loading roadmap data. Please try again.');
-                window.location.href = '/';
-            }
+            const response = await fetch('/api/get_roadmap_data');
+            roadmapData = await response.json();
+            if (roadmapData.field) renderRoadmap();
         });
 
-        function displayRoadmap() {
-            const roadmapHtml = `
-                <div class="roadmap-overview">
-                    <div class="roadmap-meta">
-                        <div class="meta-item">
-                            <i class="fas fa-bullseye"></i>
-                            <span>Career Path: <strong>${roadmapData.field}</strong></span>
+        function renderRoadmap() {
+            const roadmapWrapper = document.getElementById('roadmap-content');
+            roadmapWrapper.innerHTML = '';
+
+            ['beginner','intermediate','advanced'].forEach((stage, index) => {
+                const module = document.createElement('div');
+                module.className = `learning-module fade-in`;
+
+                const isLocked = index > 0 && !roadmapData.unlocked;
+                const stageData = roadmapData.roadmap?.[stage];
+
+                let moduleContentHtml = '';
+                let moduleHeaderDescription = '';
+                let moduleIcon = '';
+
+                if (stage === 'beginner') {
+                    moduleIcon = '🌱';
+                    moduleHeaderDescription = 'Start from core fundamentals';
+                } else if (stage === 'intermediate') {
+                    moduleIcon = '📈';
+                    moduleHeaderDescription = 'Strengthen with real-world projects';
+                } else { // advanced
+                    moduleIcon = '👑';
+                    moduleHeaderDescription = 'Master advanced skills';
+                }
+
+                if (stageData) {
+                    // Content is available, render it
+                    moduleContentHtml = `
+                        <h4>Learning Objectives</h4>
+                        <ul>${stageData.map(item => `<li>${item}</li>`).join('')}</ul>
+                        <h4>Practice Projects</h4>
+                        <ul>${(roadmapData.project_ideas?.[stage]||[]).map(p => `<li>${p}</li>`).join('')}</ul>
+                        <h4>Resources</h4>
+                        <ul>${(roadmapData.learning_resources?.[stage]||[]).map(r => `<li>${r}</li>`).join('')}</ul>
+                    `;
+                } else {
+                    // Content is not available (locked or not generated), show placeholder
+                    moduleContentHtml = `
+                        <p style="text-align: center; padding: 20px;">Detailed content for this module is locked. Unlock to view.</p>
+                    `;
+                }
+
+                module.innerHTML = `
+                    ${isLocked ? `
+                    <div class="module-lock-overlay" onclick="initiatePayment()">
+                        <i class="fas fa-lock" style="font-size: 2rem; color: #333; margin-bottom: 1rem;"></i>
+                        <h4 style="color: #333;">Unlock ${stage.charAt(0).toUpperCase() + stage.slice(1)} Module</h4>
+                        <p style="color: #555; max-width: 80%;">Upgrade to Pro to access detailed learning paths, projects, and resources.</p>
+                    </div>` : ''}
+                    <div class="module-header" onclick="toggleModule(this)">
+                        <div class="module-icon">${moduleIcon}</div>
+                        <div class="module-info">
+                            <h3>${stage.charAt(0).toUpperCase() + stage.slice(1)} Module</h3>
+                            <p>${moduleHeaderDescription}</p>
+                            <div class="progress-bar"><div class="progress-fill" style="width:${calculateStageProgress(stage)}%"></div></div>
                         </div>
-                        <div class="meta-item">
-                            <i class="fas fa-level-up-alt"></i>
-                            <span>Current Level: <strong>${roadmapData.current_level}</strong></span>
-                        </div>
-                        <div class="meta-item">
-                            <i class="fas fa-calendar-alt"></i>
-                            <span>Estimated Timeline: <strong>${getEstimatedTimeline()}</strong></span>
-                        </div>
+                        <div class="module-status"><i class="fas fa-chevron-down"></i></div>
                     </div>
-                </div>
-
-                <div class="roadmap-timeline">
-                    <div class="timeline-level ${roadmapData.current_level?.toLowerCase() === 'beginner' ? 'current' : 'completed'}">
-                        <div class="timeline-marker">
-                            <i class="fas fa-play-circle"></i>
-                        </div>
-                        <div class="timeline-content">
-                            <h3>Beginner Level</h3>
-                            <p class="timeline-duration">${roadmapData.timeline?.beginner || '3-6 months'}</p>
-                            <div class="learning-items">
-                                ${(roadmapData.roadmap?.beginner || []).map(item => 
-                                    `<div class="learning-item">${item}</div>`
-                                ).join('')}
-                            </div>
-                            <div class="resources-section">
-                                <h5>Recommended Resources:</h5>
-                                <ul>
-                                    ${(roadmapData.learning_resources?.beginner || []).map(resource => 
-                                        `<li>${resource}</li>`
-                                    ).join('')}
-                                </ul>
-                            </div>
-                            <div class="projects-section">
-                                <h5>Practice Projects:</h5>
-                                <ul>
-                                    ${(roadmapData.project_ideas?.beginner || []).map(project => 
-                                        `<li>${project}</li>`
-                                    ).join('')}
-                                </ul>
-                            </div>
-                        </div>
+                    <div class="module-content ${index === 0 ? '' : 'collapsed'}">
+                        ${moduleContentHtml}
                     </div>
+                `;
+                roadmapWrapper.appendChild(module);
+            });
 
-                    <div class="timeline-level ${roadmapData.current_level?.toLowerCase() === 'intermediate' ? 'current' : 
-                        roadmapData.current_level?.toLowerCase() === 'advanced' ? 'completed' : 'upcoming'}">
-                        <div class="timeline-marker">
-                            <i class="fas fa-arrow-up"></i>
-                        </div>
-                        <div class="timeline-content">
-                            <h3>Intermediate Level</h3>
-                            <p class="timeline-duration">${roadmapData.timeline?.intermediate || '6-12 months'}</p>
-                            <div class="learning-items">
-                                ${(roadmapData.roadmap?.intermediate || []).map(item => 
-                                    `<div class="learning-item">${item}</div>`
-                                ).join('')}
-                            </div>
-                            <div class="resources-section">
-                                <h5>Recommended Resources:</h5>
-                                <ul>
-                                    ${(roadmapData.learning_resources?.intermediate || []).map(resource => 
-                                        `<li>${resource}</li>`
-                                    ).join('')}
-                                </ul>
-                            </div>
-                            <div class="projects-section">
-                                <h5>Practice Projects:</h5>
-                                <ul>
-                                    ${(roadmapData.project_ideas?.intermediate || []).map(project => 
-                                        `<li>${project}</li>`
-                                    ).join('')}
-                                </ul>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="timeline-level ${roadmapData.current_level?.toLowerCase() === 'advanced' ? 'current' : 'upcoming'}">
-                        <div class="timeline-marker">
-                            <i class="fas fa-crown"></i>
-                        </div>
-                        <div class="timeline-content">
-                            <h3>Advanced Level</h3>
-                            <p class="timeline-duration">${roadmapData.timeline?.advanced || '12+ months'}</p>
-                            <div class="learning-items">
-                                ${(roadmapData.roadmap?.advanced || []).map(item => 
-                                    `<div class="learning-item">${item}</div>`
-                                ).join('')}
-                            </div>
-                            <div class="resources-section">
-                                <h5>Recommended Resources:</h5>
-                                <ul>
-                                    ${(roadmapData.learning_resources?.advanced || []).map(resource => 
-                                        `<li>${resource}</li>`
-                                    ).join('')}
-                                </ul>
-                            </div>
-                            <div class="projects-section">
-                                <h5>Practice Projects:</h5>
-                                <ul>
-                                    ${(roadmapData.project_ideas?.advanced || []).map(project => 
-                                        `<li>${project}</li>`
-                                    ).join('')}
-                                </ul>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="recommended-skills">
-                    <h3><i class="fas fa-star"></i> Key Skills to Master</h3>
-                    <div class="skills-grid">
-                        ${(roadmapData.recommended_skills || []).map(skill => 
-                            `<div class="skill-item">
-                                <i class="fas fa-check-circle"></i>
-                                <span>${skill}</span>
-                            </div>`
-                        ).join('')}
-                    </div>
-                </div>
-            `;
-
-            document.getElementById('roadmap-content').innerHTML = roadmapHtml;
-
-            // If payment confirmed, show full roadmap, else lock
+            renderSkills();
+            // Initially disable the download button if not unlocked
+            document.getElementById('download-roadmap-btn') = !roadmapData.unlocked;
             if (roadmapData.unlocked) {
-                unlockUI();
-            } else {
-                lockUI();
+                try { fetch('/api/send_full_roadmap_email', { method: 'POST' }); } catch (e) {}
             }
         }
 
-        function getEstimatedTimeline() {
-            const currentLevel = roadmapData.current_level?.toLowerCase();
-            if (currentLevel === 'advanced') return '6+ months to mastery';
-            if (currentLevel === 'intermediate') return '12-18 months to advanced';
-            return '18-24 months to advanced';
+        function handleDownloadRoadmapClick() {
+            if (roadmapData.unlocked) {
+                downloadRoadmap();
+            } else {
+                // If not unlocked, initiate payment flow
+                initiatePayment();
+            }
         }
 
-        async function downloadRoadmap() {
+        function renderSkills() {
+            if (!roadmapData.recommended_skills) return;
+            const roadmapWrapper = document.getElementById('roadmap-content');
+            const skillSection = document.createElement('div');
+            skillSection.className = 'skills-overview fade-in';
+            skillSection.innerHTML = `
+                <h3><i class="fas fa-star"></i> Key Skills You'll Master</h3>
+                <div>${roadmapData.recommended_skills.map(skill => `<span class="skill-tag">${skill}</span>`).join('')}</div>
+            `;
+            roadmapWrapper.appendChild(skillSection);
+        }
+
+        function toggleModule(header) {
+            const content = header.nextElementSibling;
+            content.classList.toggle('collapsed');
+            header.querySelector('.fas').classList.toggle('fa-chevron-down');
+            header.querySelector('.fas').classList.toggle('fa-chevron-up');
+        }
+
+        function calculateStageProgress(stage) {
+            if (roadmapData.current_level?.toLowerCase() === stage) return 50;
+            if (stage === 'beginner') return 100;
+            if (stage === 'intermediate' && roadmapData.current_level?.toLowerCase() === 'advanced') return 100;
+            return 0;
+        }
+
+        async function initiatePayment() {
             try {
-                const response = await fetch('/api/download_roadmap', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }
-                });
-                
-                if (response.ok) {
-                    const blob = await response.blob();
+                const response = await fetch('/api/payment/create', { method: 'POST' });
+                const data = await response.json();
+                if (data.redirect_url) {
+                    window.location.href = data.redirect_url;
+                } else {
+                    alert('Could not initiate payment. Please try again.');
+                }
+            } catch (error) {
+                console.error('Payment initiation error:', error);
+                alert('Error connecting to payment service.');
+            }
+        }
+
+        function downloadRoadmap() {
+            // This function now triggers a POST request to the backend
+            // which will handle file generation and sending.
+            fetch('/api/download_roadmap', { method: 'POST' })
+                .then(res => res.blob())
+                .then(blob => {
                     const url = window.URL.createObjectURL(blob);
                     const a = document.createElement('a');
+                    a.style.display = 'none';
                     a.href = url;
-                    a.download = `career_roadmap_${new Date().toISOString().split('T')[0]}.txt`;
+                    a.download = `Personalized_Roadmap.txt`;
                     document.body.appendChild(a);
                     a.click();
                     window.URL.revokeObjectURL(url);
-                    document.body.removeChild(a);
-                } else {
-                    alert('Error downloading roadmap. Please try again.');
-                }
-            } catch (error) {
-                console.error('Download error:', error);
-                alert('Error downloading roadmap. Please check server connection.');
-            }
+                })
+                .catch(() => alert('Could not download roadmap.'));
         }
 
-        function shareRoadmap() {
-            if (navigator.share) {
-                navigator.share({
-                    title: `My ${roadmapData.field} Career Roadmap`,
-                    text: `Check out my personalized career roadmap for ${roadmapData.field}!`,
-                    url: window.location.href
-                });
-            } else {
-                // Fallback: copy to clipboard
-                navigator.clipboard.writeText(window.location.href).then(() => {
-                    alert('Roadmap link copied to clipboard!');
-                });
-            }
-        }
-
+        function shareRoadmap() { alert('Share functionality coming soon!'); }
         function startOver() {
-            if (confirm('Are you sure you want to start a new assessment? This will clear your current results.')) {
-                // Clear session data
-                fetch('/api/clear_session', { method: 'POST' })
-                    .then(() => {
-                        window.location.href = '/';
-                    })
-                    .catch(() => {
-                        window.location.href = '/';
-                    });
-            }
-        }
-
-        function lockUI() {
-            document.getElementById('roadmap-content').classList.add('blurred');
-            document.getElementById('roadmap-lock-overlay').classList.remove('hidden');
-            document.getElementById('download-roadmap-btn').disabled = true;
-        }
-
-        function unlockUI() {
-            document.getElementById('roadmap-content').classList.remove('blurred');
-            document.getElementById('roadmap-lock-overlay').classList.add('hidden');
-            document.getElementById('download-roadmap-btn').disabled = false;
-        }
-
-        async function unlockRoadmap() {
-            try {
-                const resp = await fetch('/api/payment/create', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
-                const data = await resp.json();
-                if (data.redirect) {
-                    window.location.href = data.redirect;
-                }
-            } catch (e) {
-                alert('Unable to start payment right now. Please try again.');
+            if (confirm('Are you sure you want to start over? This will clear your current assessment results.')) {
+                fetch('/api/clear_session', { method: 'POST' }).then(() => window.location.href = '/');
             }
         }
     </script>

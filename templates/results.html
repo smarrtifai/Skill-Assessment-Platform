@@ -134,7 +134,7 @@
             // Display tech field options
             const techFields = resultsData.tech_fields || ['AI/ML', 'Business Analytics and Data Analytics', 'Gen AI', 'Agentic AI'];
             const fieldsHtml = techFields.map(field => `
-                <div class="field-card" onclick="selectField('${field}')">
+                <div class="field-card" onclick="selectField(event, '${field}')">
                     <div class="field-icon">
                         <i class="fas ${getFieldIcon(field)}"></i>
                     </div>
@@ -166,7 +166,7 @@
             return descriptions[field] || 'Technology and Development';
         }
 
-        function selectField(field) {
+        function selectField(event, field) {
             // Remove previous selection
             document.querySelectorAll('.field-card').forEach(card => {
                 card.classList.remove('selected');
@@ -186,9 +186,6 @@
                 return;
             }
 
-            console.log('🚀 Generating roadmap for field:', selectedField);
-            console.log('🚀 Current results data:', resultsData);
-
             try {
                 const response = await fetch('/api/roadmap', {
                     method: 'POST',
@@ -197,15 +194,12 @@
                         tech_field: selectedField
                     })
                 });
-                
+
                 const data = await response.json();
-                console.log('🚀 Roadmap generation response:', data);
-                
+
                 if (data.redirect) {
-                    console.log('🚀 Redirecting to:', data.redirect);
                     window.location.href = data.redirect;
                 } else if (data.error) {
-                    console.error('❌ Roadmap generation error:', data.error);
                     alert('Error generating roadmap: ' + data.error);
                 } else {
                     alert('Error generating roadmap. Please try again.');

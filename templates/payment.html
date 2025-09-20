@@ -270,30 +270,34 @@
 
     <script>
         document.getElementById('pay-btn').addEventListener('click', async () => {
-            // Redirect to actual SMARRTIFAI consultation service payment page
-            window.open('https://smarrtifai.com/product/consultation-service/', '_blank');
+            const payBtn = document.getElementById('pay-btn');
+            payBtn.disabled = true;
+            payBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing Payment...';
             
-            // Simulate payment confirmation after redirect
+            // Simulate payment confirmation. In a real app, this would be handled
+            // by a webhook from the payment provider after the user pays on their site.
             try {
                 const token = '{{ token }}';
-                const resp = await fetch('/payment/confirm', {
+                const response = await fetch('/payment/confirm', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ token })
                 });
-                const data = await resp.json();
+                const data = await response.json();
+
                 if (data.redirect) {
-                    try { fetch('/api/send_full_roadmap_email', { method: 'POST' }); } catch (e) {}
-                    // Show success message and redirect to roadmap
                     alert('Payment completed! Redirecting to your roadmap...');
                     window.location.href = data.redirect;
+                } else {
+                    alert(data.error || 'Payment confirmation failed. Please contact support.');
+                    payBtn.disabled = false;
+                    payBtn.innerHTML = '<i class="fas fa-lock"></i> Pay Securely with SMARRTIFAI <i class="fas fa-arrow-right"></i>';
                 }
-            } catch (e) {
-                console.log('Payment confirmation in progress...');
+            } catch (error) {
+                console.error('Payment confirmation error:', error);
+                alert('An error occurred during payment confirmation.');
             }
         });
     </script>
 </body>
 </html>
-
-
