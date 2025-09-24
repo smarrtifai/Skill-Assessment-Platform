@@ -3,301 +3,93 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Secure Payment - Skills Assessment Platform</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <title>Razorpay Payment</title>
     <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
         .payment-container {
-            max-width: 800px;
-            margin: 2rem auto;
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 2rem;
-            align-items: start;
-        }
-        
-        .payment-summary {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 2rem;
-            border-radius: 20px;
-            box-shadow: 0 20px 40px rgba(102, 126, 234, 0.3);
-        }
-        
-        .payment-form {
             background: white;
-            padding: 2rem;
-            border-radius: 20px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
-            border: 1px solid #e5e7eb;
-        }
-        
-        .price-display {
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
             text-align: center;
-            margin: 1.5rem 0;
         }
-        
-        .original-price {
-            font-size: 1.2rem;
-            text-decoration: line-through;
-            color: rgba(255, 255, 255, 0.7);
-            margin-right: 0.5rem;
-        }
-        
-        .current-price {
-            font-size: 2.5rem;
-            font-weight: 700;
-            color: #fff;
-            margin: 0.5rem 0;
-        }
-        
-        .discount-badge {
-            background: #10b981;
+        #pay-btn {
+            background-color: #3399cc;
             color: white;
-            padding: 0.5rem 1rem;
-            border-radius: 25px;
-            font-size: 0.9rem;
-            font-weight: 600;
-            display: inline-block;
-            margin-top: 0.5rem;
-        }
-        
-        .features-list {
-            list-style: none;
-            padding: 0;
-            margin: 1.5rem 0;
-        }
-        
-        .features-list li {
-            padding: 0.75rem 0;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-            display: flex;
-            align-items: center;
-            font-size: 0.95rem;
-        }
-        
-        .features-list li:last-child {
-            border-bottom: none;
-        }
-        
-        .features-list i {
-            color: #10b981;
-            margin-right: 0.75rem;
-            font-size: 1.1rem;
-        }
-        
-        .security-badges {
-            display: flex;
-            justify-content: center;
-            gap: 1rem;
-            margin: 1.5rem 0;
-            flex-wrap: wrap;
-        }
-        
-        .security-badge {
-            background: rgba(255, 255, 255, 0.1);
-            padding: 0.5rem 1rem;
-            border-radius: 15px;
-            font-size: 0.85rem;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-        
-        .payment-button {
-            width: 100%;
-            padding: 1rem 2rem;
-            font-size: 1.1rem;
-            font-weight: 600;
-            border-radius: 15px;
+            padding: 15px 30px;
             border: none;
-            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-            color: white;
+            border-radius: 5px;
+            font-size: 16px;
             cursor: pointer;
-            transition: all 0.3s ease;
-            box-shadow: 0 10px 25px rgba(239, 68, 68, 0.3);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 0.75rem;
+            margin-top: 20px;
         }
-        
-        .payment-button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 15px 35px rgba(239, 68, 68, 0.4);
+        #pay-btn:hover {
+            background-color: #2980b9;
         }
-        
-        .payment-button:active {
-            transform: translateY(0);
-        }
-        
-        .trust-indicators {
-            text-align: center;
-            margin-top: 1.5rem;
-            color: #6b7280;
-            font-size: 0.9rem;
-        }
-        
-        .trust-indicators i {
-            color: #10b981;
-            margin-right: 0.5rem;
-        }
-        
-        .guarantee-box {
-            background: #f0f9ff;
-            border: 2px solid #3b82f6;
-            border-radius: 15px;
-            padding: 1.5rem;
-            margin: 1.5rem 0;
-            text-align: center;
-        }
-        
-        .guarantee-box h4 {
-            color: #1e40af;
-            margin-bottom: 0.5rem;
-            font-size: 1.1rem;
-        }
-        
-        .guarantee-box p {
-            color: #1e40af;
-            font-size: 0.9rem;
-            margin: 0;
-        }
-        
-        @media (max-width: 768px) {
-            .payment-container {
-                grid-template-columns: 1fr;
-                gap: 1.5rem;
-                margin: 1rem;
-            }
-            
-            .current-price {
-                font-size: 2rem;
-            }
-            
-            .security-badges {
-                flex-direction: column;
-                align-items: center;
-            }
+        .product-info {
+            margin: 20px 0;
         }
     </style>
 </head>
 <body>
-    <nav class="navbar">
-        <div class="nav-container">
-            <div class="nav-brand">
-                <a href="/">
-                    <img src="/Assets/Screenshot 2025-08-01 092513.png" alt="SMARRTIFAI" class="logo">
-                </a>
-            </div>
-            <div class="nav-steps">
-                <div class="step" id="step-1"><span>1</span> Start</div>
-                <div class="step" id="step-2"><span>2</span> Assess</div>
-                <div class="step" id="step-3"><span>3</span> Results</div>
-                <div class="step active" id="step-4"><span>4</span> Payment</div>
-            </div>
+    <div class="payment-container">
+        <h2>Product Payment</h2>
+        <div class="product-info">
+            <h3>Premium Course</h3>
+            <p>Price: ₹{{ "%.2f"|format(amount/100) }}</p>
+            <p>Description: Consultation Service </p>
         </div>
-    </nav>
-
-    <div class="container">
-        <div class="payment-container">
-            <!-- Payment Summary -->
-            <div class="payment-summary">
-                <h2 style="margin-bottom: 0.5rem; font-size: 1.8rem;">
-                    <i class="fas fa-crown"></i> Unlock Your Full Potential
-                </h2>
-                <p style="opacity: 0.9; margin-bottom: 1.5rem;">
-                    Get your personalized AI/ML career roadmap with expert consultation
-                </p>
-                
-                <div class="price-display">
-                    <div>
-                        <span class="original-price">₹1,499</span>
-                        <span class="current-price">₹999</span>
-                    </div>
-                    <div class="discount-badge">
-                        <i class="fas fa-tag"></i> 33% OFF - Limited Time!
-                    </div>
-                </div>
-                
-                <ul class="features-list">
-                    <li><i class="fas fa-check-circle"></i> Personalized Skill Assessment</li>
-                    <li><i class="fas fa-check-circle"></i> Custom Career Roadmap Design</li>
-                    <li><i class="fas fa-check-circle"></i> Tailored Learning Solutions</li>
-                    <li><i class="fas fa-check-circle"></i> Actionable Recommendations</li>
-                    <li><i class="fas fa-check-circle"></i> 30-Day Support & Guidance</li>
-                    <li><i class="fas fa-check-circle"></i> Downloadable Resources</li>
-                </ul>
-                
-                <div class="security-badges">
-                    <div class="security-badge">
-                        <i class="fas fa-shield-alt"></i>
-                        <span>SSL Secured</span>
-                    </div>
-                    <div class="security-badge">
-                        <i class="fas fa-lock"></i>
-                        <span>256-bit Encryption</span>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Payment Form -->
-            <div class="payment-form">
-                <h3 style="margin-bottom: 1rem; color: #1f2937; text-align: center;">
-                    <i class="fas fa-credit-card"></i> Complete Your Purchase
-                </h3>
-                
-                <div class="guarantee-box">
-                    <h4><i class="fas fa-shield-check"></i> 100% Satisfaction Guarantee</h4>
-                    <p>Not satisfied? Get a full refund within 7 days, no questions asked.</p>
-                </div>
-                
-                <button class="payment-button" id="pay-btn">
-                    <i class="fas fa-lock"></i>
-                    <span>Pay Securely with SMARRTIFAI</span>
-                    <i class="fas fa-arrow-right"></i>
-                </button>
-                
-                <div class="trust-indicators">
-                    <p><i class="fas fa-check-circle"></i> Secure payment processed by SMARRTIFAI</p>
-                    <p><i class="fas fa-clock"></i> Instant access after payment</p>
-                    <p><i class="fas fa-headset"></i> 24/7 customer support</p>
-                </div>
-            </div>
-        </div>
+        <button id="pay-btn">Pay Now with Razorpay</button>
+        <div id="payment-status"></div>
     </div>
 
-    <script>
-        document.getElementById('pay-btn').addEventListener('click', async () => {
-            const payBtn = document.getElementById('pay-btn');
-            payBtn.disabled = true;
-            payBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing Payment...';
-            
-            // Simulate payment confirmation. In a real app, this would be handled
-            // by a webhook from the payment provider after the user pays on their site.
-            try {
-                const token = '{{ token }}';
-                const response = await fetch('/payment/confirm', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ token })
-                });
-                const data = await response.json();
+    <!-- Hidden form for payment submission -->
+    <form id="payment-form" action="/charge" method="POST" style="display: none;">
+    <input type="hidden" name="razorpay_payment_id" id="razorpay_payment_id">
+    <input type="hidden" name="razorpay_order_id" id="razorpay_order_id">
+    <input type="hidden" name="razorpay_signature" id="razorpay_signature">
+</form>
 
-                if (data.redirect) {
-                    alert('Payment completed! Redirecting to your roadmap...');
-                    window.location.href = data.redirect;
-                } else {
-                    alert(data.error || 'Payment confirmation failed. Please contact support.');
-                    payBtn.disabled = false;
-                    payBtn.innerHTML = '<i class="fas fa-lock"></i> Pay Securely with SMARRTIFAI <i class="fas fa-arrow-right"></i>';
-                }
-            } catch (error) {
-                console.error('Payment confirmation error:', error);
-                alert('An error occurred during payment confirmation.');
-            }
-        });
-    </script>
+
+    <!-- Razorpay Checkout Script -->
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+<script>
+var options = {
+    "key": "{{ key_id }}",
+    "amount": "{{ amount }}",
+    "currency": "INR",
+    "name": "Premium Course",
+    "description": "Complete Web Development Course",
+    "order_id": "{{ order_id }}",
+    "handler": function (response){
+        document.getElementById('razorpay_payment_id').value = response.razorpay_payment_id;
+        document.getElementById('razorpay_order_id').value = response.razorpay_order_id;
+        document.getElementById('razorpay_signature').value = response.razorpay_signature;
+        document.getElementById('payment-form').submit();
+    },
+    "prefill": {
+        "name": "Test User",
+        "email": "test.user@example.com",
+        "contact": "9999999999"
+    },
+    "notes": {
+        "address": "Razorpay Corporate Office"
+    },
+    "theme": {
+        "color": "#3399cc"
+    }
+};
+var rzp1 = new Razorpay(options);
+document.getElementById('pay-btn').onclick = function(e){
+    rzp1.open();
+    e.preventDefault();
+}
+</script>
 </body>
 </html>

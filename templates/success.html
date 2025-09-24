@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Payment Successful</title>
+    <style>
+        body { font-family: Arial; text-align: center; margin-top: 100px; }
+        .success-container { max-width: 500px; margin: 0 auto; padding: 20px; }
+        .success { color: green; }
+    </style>
+</head>
+<body>
+    <div class="success-container">
+        <h1 class="success">🎉 Payment Successful!</h1>
+        <p>Thank you for your purchase. Your order has been confirmed.</p>
+        {% if payment_details %}
+        <div>
+            <p><strong>Payment ID:</strong> {{ payment_details.payment_id }}</p>
+            <p><strong>Order ID:</strong> {{ payment_details.order_id }}</p>
+            <p><strong>Amount:</strong> ₹{{ payment_details.amount }}</p>
+        </div>
+        {% endif %}
+        <a href="/">← Back to Home</a>
+    </div>
+</body>
+</html>

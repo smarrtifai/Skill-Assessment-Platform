@@ -3,23 +3,60 @@ import json
 import random
 from datetime import datetime
 from flask import Flask, request, jsonify, render_template, send_file, session, redirect, url_for
+import traceback
+import traceback
 from werkzeug.utils import secure_filename
 import PyPDF2
 import docx
 from groq import Groq
 import uuid
+import razorpay
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for
+import hmac
+import hashlib
+import uuid
+import os
+from dotenv import load_dotenv
+import calendly
+
+load_dotenv()
 
 # Application Configuration
 class Config:
     UPLOAD_FOLDER = 'uploads'
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB
     TEST_DURATION = 1800  # 30 minutes
+    RAZORPAY_KEY_ID = os.environ.get('RAZORPAY_KEY_ID', 'YOUR_KEY_ID')
+    RAZORPAY_KEY_SECRET = os.environ.get('RAZORPAY_KEY_SECRET', 'YOUR_KEY_SECRET')
+    CALENDLY_API_KEY = os.environ.get('CALENDLY_API_KEY', 'YOUR_CALENDLY_API_KEY')
 
 # Initialize Flask App
 app = Flask(__name__)
 app.config.from_object(Config)
 app.secret_key = os.environ.get('SECRET_KEY', 'your-secret-key-here')
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
+# Initialize Razorpay Client
+class MockRazorpayClient:
+    def __init__(self, auth):
+        pass
+
+    class Order:
+        def create(self, data):
+            return {'id': f'order_{uuid.uuid4()}'}
+
+    order = Order()
+
+if os.environ.get('FLASK_ENV') == 'development':
+    razorpay_client = MockRazorpayClient(auth=('', ''))
+else:
+    razorpay_client = razorpay.Client(
+        auth=(app.config['RAZORPAY_KEY_ID'], app.config['RAZORPAY_KEY_SECRET'])
+    )
+
+# Initialize Calendly Client
+calendly_client = calendly.Calendly(app.config['CALENDLY_API_KEY'])
+
 
 # Initialize Groq Client
 def get_groq_client():
@@ -512,13 +549,12 @@ You are an expert technical interviewer creating a skills assessment. Based on t
     "correct": 1
   }},
   {{
-    "question": "What will be the output of the following Python code?\\n\\n```python\\nmy_list = [1, 2, 3]\\nprint(my_list[3])\\n```",
+    "question": "What will be the output of the following Python code?\n\n```python\nmy_list = [1, 2, 3]\nprint(my_list[3])\n```",
     "options": ["3", "None", "IndexError", "SyntaxError"],
     "correct": 2
   }},
   ...
-]
-"""
+]"""
         try:
             print("🧠 Generating questions with Groq...")
             chat_completion = client.chat.completions.create(
@@ -569,8 +605,9 @@ You are an expert technical interviewer creating a skills assessment. Based on t
         
         # 1. Gather questions for matched skills
         for skill in skills:
-            if skill in SAMPLE_QUESTIONS:
-                skill_data = SAMPLE_QUESTIONS[skill]
+            skill_lower = skill.lower()
+            if skill_lower in SAMPLE_QUESTIONS:
+                skill_data = SAMPLE_QUESTIONS[skill_lower]
                 if isinstance(skill_data, dict):
                     specific_questions.extend(skill_data.get('technical', []))
                     if projects:
@@ -728,8 +765,7 @@ Return a **valid JSON object** with the following structure only, no explanation
     "advanced": ["Open-source contributions", "Certifications"]
   }},
   "recommended_skills": ["List of most important skills to master"]
-}}
-"""
+}} """
         try:
             print(f"🧠 Generating detailed roadmap for {tech_field} with Groq...")
             chat_completion = client.chat.completions.create(
@@ -822,7 +858,14 @@ def results_page():
 @app.route('/roadmap')
 def roadmap_page():
     """Roadmap page."""
+    if not session.get('roadmap_unlocked'):
+        return redirect(url_for('payment'))
     return render_template('roadmap.html')
+
+@app.route('/schedule')
+def schedule_page():
+    """Schedule page."""
+    return render_template('schedule.html')
 
 # ----- Flowchart alignment helpers (non-breaking stubs) -----
 @app.route('/api/send_assessment_link', methods=['POST'])
@@ -934,12 +977,11 @@ You are an expert technical interviewer creating a skills assessment. Based on t
     "correct": 1
   }},
   {{
-    "question": "What will be the output of the following Python code?\\n\\n```python\\nmy_list = [1, 2, 3]\\nprint(my_list[3])\\n```",
+    "question": "What will be the output of the following Python code?\n\n```python\nmy_list = [1, 2, 3]\nprint(my_list[3])\n```",
     "options": ["3", "None", "IndexError", "SyntaxError"],
     "correct": 2
   }}
-]
-"""
+]"""
         try:
             print(f"🧠 Generating questions for interests ({interests_str}) with Groq...")
             chat_completion = client.chat.completions.create(
@@ -1079,10 +1121,10 @@ def upload_resume():
             return jsonify({'error': 'Invalid filename'}), 400
             
         # Validate file extension
-        allowed_extensions = {'.pdf', '.doc', '.docx'}
+        allowed_extensions = {'.pdf', '.docx'}
         file_ext = '.' + filename.rsplit('.', 1)[1].lower() if '.' in filename else ''
         if file_ext not in allowed_extensions:
-            return jsonify({'error': 'Unsupported file format. Please upload PDF, DOC, or DOCX files.'}), 400
+            return jsonify({'error': 'Unsupported file format. Please upload PDF or DOCX files.'}), 400
         
         file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(file_path)
@@ -1091,7 +1133,7 @@ def upload_resume():
         text = ''
         if file_ext == '.pdf':
             text = FileProcessor.extract_text_from_pdf(file_path)
-        elif file_ext in ['.doc', '.docx']:
+        elif file_ext == '.docx':
             text = FileProcessor.extract_text_from_docx(file_path)
         
         if not text or len(text.strip()) < 50:
@@ -1135,6 +1177,7 @@ def upload_resume():
     
     except Exception as e:
         print(f"Upload error: {str(e)}")  # Log error
+        traceback.print_exc()
         return jsonify({'error': 'Processing failed. Please try again with a different file.'}), 500
 
 @app.route('/api/assess', methods=['POST'])
@@ -1170,69 +1213,103 @@ def assess_skills():
     return jsonify({'redirect': '/results'})
 
 @app.route('/api/roadmap', methods=['POST'])
-def generate_roadmap():
-    """Generate personalized career roadmap."""
+def request_roadmap():
+    """Stores the selected tech field and redirects to the bill."""
     data = request.json
     tech_field = data.get('tech_field')
-    results = session.get('assessment_results', {})
-    skill_level = results.get('level', 'Beginner')
-    skills = results.get('skills', [])
-    
-    print(f"🔧 Roadmap generation - tech_field: {tech_field}")
-    print(f"🔧 Roadmap generation - results: {results}")
-    print(f"🔧 Roadmap generation - skill_level: {skill_level}")
     
     if not tech_field:
-        print("❌ No tech_field provided")
         return jsonify({'error': 'No tech field selected'}), 400
-    
-    if not results:
-        print("❌ No assessment results found")
-        return jsonify({'error': 'No assessment results found. Please complete assessment first.'}), 400
-    
+        
     session['tech_field'] = tech_field
-    
-    # AI Processing: Create personalized roadmap with learning resources, project ideas, timelines
-    roadmap = RoadmapGenerator.generate_roadmap_with_groq(tech_field, skill_level, skills)
-    session['roadmap_data'] = roadmap
-    
-    print(f"✅ Roadmap generated successfully: {roadmap.get('field', 'No field')}")
-    print(f"🔍 Roadmap data structure: {list(roadmap.keys())}")
-    print(f"🔍 Roadmap field value: {roadmap.get('field')}")
-    print(f"🔍 Session roadmap_data: {session.get('roadmap_data', {}).get('field')}")
-    
-    return jsonify({'redirect': '/roadmap'})
+    return jsonify({'redirect': '/bill'})
 
-@app.route('/api/payment/create', methods=['POST'])
-def create_payment_link():
-    """Simulate generating a payment link and redirecting to a payment page."""
-    # In a real app, you'd call a payment provider (Stripe, Razorpay) here.
-    token = str(uuid.uuid4())
-    session['payment_token'] = token
-    payment_url = url_for('payment_page', token=token, _external=True)
-    return jsonify({'redirect_url': payment_url})
+@app.route('/bill')
+def bill_page():
+    """Display the bill before payment."""
+    invoice_id = f"INV-{uuid.uuid4().hex[:8].upper()}"
+    return render_template('bill.html', invoice_id=invoice_id)
 
-@app.route('/pay')
-def payment_page():
-    """Simple payment page that confirms payment (stub)."""
-    token = request.args.get('token', '')
-    # Only allow if token matches what we created
-    if token and session.get('payment_token') == token:
-        return render_template('payment.html', token=token)
-    return redirect(url_for('index'))
+@app.route('/payment', methods=['GET'])
+def payment():
+    """Create a Razorpay order and render the payment page."""
+    amount = 99900  # Amount in paise (499 INR)
+    order_data = {
+        'amount': amount,
+        'currency': 'INR',
+        'receipt': f'receipt_{uuid.uuid4().hex}',
+        'payment_capture': 1
+    }
+    
+    try:
+        order = razorpay_client.order.create(data=order_data)
+        session['razorpay_order_id'] = order['id']
+        
+        return render_template(
+            'payment.html',
+            order_id=order['id'],
+            amount=amount,
+            key_id=app.config['RAZORPAY_KEY_ID']
+        )
+    except Exception as e:
+        print(f"Error creating order: {str(e)}")
+        return "Error creating payment order", 500
 
-@app.route('/payment/confirm', methods=['POST'])
-def confirm_payment():
-    """Confirm payment and mark roadmap as unlocked. Simulates gateway callback."""
-    token = request.json.get('token') if request.is_json else request.form.get('token')
-    # In a real app, this would be a webhook from the payment provider.
-    # For simulation, we check the session token.
-    if token and session.get('payment_token') == token and not session.get('payment_confirmed'):
-        print(f"✅ Payment confirmed for token: {token}")
-        session['payment_confirmed'] = True
+@app.route('/charge', methods=['POST'])
+def charge():
+    """Handle successful payment callback from Razorpay."""
+    payment_id = request.form.get('razorpay_payment_id')
+    order_id = request.form.get('razorpay_order_id')
+    signature = request.form.get('razorpay_signature')
+
+    params_dict = {
+        'razorpay_order_id': order_id,
+        'razorpay_payment_id': payment_id,
+        'razorpay_signature': signature
+    }
+
+    def generate_and_store_roadmap():
+        tech_field = session.get('tech_field')
+        results = session.get('assessment_results', {})
+        skill_level = results.get('level', 'Beginner')
+        skills = results.get('skills', [])
+        
+        if not tech_field or not results:
+            # This should not happen in a normal flow
+            return False
+
+        roadmap = RoadmapGenerator.generate_roadmap_with_groq(tech_field, skill_level, skills)
+        session['roadmap_data'] = roadmap
         session['roadmap_unlocked'] = True
-        return jsonify({'redirect': url_for('roadmap_page')})
-    return jsonify({'error': 'Invalid payment token'}), 400
+        return True
+
+    if os.environ.get('FLASK_ENV') == 'development':
+        if generate_and_store_roadmap():
+            return redirect(url_for('roadmap_page'))
+        else:
+            return redirect(url_for('index')) # Or some error page
+    else:
+        try:
+            razorpay_client.utility.verify_payment_signature(params_dict)
+            if generate_and_store_roadmap():
+                return redirect(url_for('roadmap_page'))
+            else:
+                return redirect(url_for('index')) # Or some error page
+        except razorpay.errors.SignatureVerificationError as e:
+            print(f"Payment verification failed: {e}")
+            return redirect(url_for('payment'))
+
+@app.route('/failure')
+def payment_failure():
+    """Payment failure page"""
+    return render_template('failure.html')
+
+@app.route('/success')
+def payment_success():
+    """Payment success page"""
+    # This page is not used in the new flow, but we keep it for now.
+    return redirect(url_for('roadmap_page'))
+
 
 @app.route('/api/send_full_roadmap_email', methods=['POST'])
 def send_full_roadmap_email():
@@ -1253,8 +1330,12 @@ def send_full_roadmap_email():
 
 @app.route('/api/download_roadmap', methods=['POST'])
 def download_roadmap():
-    """Generate and download roadmap file."""
+    if not session.get('roadmap_unlocked'):
+        return jsonify({'error': 'Roadmap not unlocked. Please complete the payment first.'}), 403
+    
     data = session.get('roadmap_data', {})
+    if not data:
+        return jsonify({'error': 'No roadmap data found'}), 400
     
     roadmap_text = f"""
 PERSONALIZED CAREER ROADMAP
@@ -1279,13 +1360,13 @@ RECOMMENDED SKILLS:
 ------------------
 {chr(10).join('- ' + skill for skill in data.get('recommended_skills', []))}
 """
-    
+
     filename = f"roadmap_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
     filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-    
+
     with open(filepath, 'w') as f:
         f.write(roadmap_text)
-    
+
     return send_file(filepath, as_attachment=True, download_name=filename)
 
 @app.route('/api/get_assessment_data')
@@ -1330,15 +1411,40 @@ def clear_session():
     session.clear()
     return jsonify({'success': True})
 
+@app.route('/schedule_meeting', methods=['POST'])
+def schedule_meeting():
+    """Schedule a meeting with a mentor."""
+    try:
+        # Get current user
+        user = calendly_client.get_current_user()
+        # Create a one-time event
+        event = calendly_client.create_one_off_event(
+            user['resource']['uri'],
+            "30 Minute Meeting",
+            "30min",
+            30,
+        )
+        return jsonify({'scheduling_url': event['resource']['scheduling_url']})
+    except Exception as e:
+        print(f"Error creating Calendly event: {e}")
+        return jsonify({'error': "Could not create scheduling link. Please try again later."}), 500
+
+@app.route('/calendly_webhook', methods=['POST'])
+def calendly_webhook():
+    """Handle Calendly webhooks."""
+    data = request.json
+    print(f"Received Calendly webhook: {data}")
+    return jsonify({'status': 'success'}), 200
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     debug = os.environ.get('FLASK_ENV') == 'development'
     
-    print('\n🚀 Starting Skills Assessment Platform...')
-    print(f'📍 Server starting on port: {port}')
+    print('\nStarting Skills Assessment Platform...')
+    print(f'Server starting on port: {port}')
     if debug:
-        print('📍 Development mode enabled')
-    print('\n💡 Make sure to:')
+        print('Development mode enabled')
+    print('\nMake sure to:')
     print('   • Check your internet connection')
     print('   • Set GROQ_API_KEY environment variable')
     print('   • Upload a technical resume for best results\n')
