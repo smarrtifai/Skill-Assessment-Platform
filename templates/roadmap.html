@@ -127,7 +127,6 @@
     <i class="fas fa-download"></i> Download Roadmap
 </button>
 
-
                 <button class="btn-secondary" onclick="shareRoadmap()">
                     <i class="fas fa-share-alt"></i> Share
                 </button>
@@ -215,7 +214,7 @@
 
             renderSkills();
             // Initially disable the download button if not unlocked
-            document.getElementById('download-roadmap-btn') = !roadmapData.unlocked;
+            document.getElementById('download-roadmap-btn').disabled = !roadmapData.unlocked;
             if (roadmapData.unlocked) {
                 try { fetch('/api/send_full_roadmap_email', { method: 'POST' }); } catch (e) {}
             }

@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Next Steps - Skills Assessment Platform</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <style>
+        .container {
+            text-align: center;
+            padding-top: 50px;
+        }
+        .btn-primary {
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Thank you for your payment!</h1>
+        <p>Your personalized roadmap is being downloaded.</p>
+        <p>Please schedule your meeting with one of our mentors.</p>
+        <a href="{{ calendly_url }}" target="_blank" class="btn-primary">Schedule a Meeting</a>
+        <a href="{{ url_for('roadmap_page') }}" class="btn-primary">View Your Roadmap</a>
+    </div>
+    <script>
+        window.onload = function() {
+            const iframe = document.createElement('iframe');
+            iframe.style.display = 'none';
+            iframe.src = '/api/download_roadmap';
+            document.body.appendChild(iframe);
+        };
+    </script>
+</body>
+</html>

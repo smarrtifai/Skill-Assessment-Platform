@@ -18,6 +18,7 @@ import uuid
 import os
 from dotenv import load_dotenv
 import calendly
+import google.generativeai as genai
 
 load_dotenv()
 
@@ -29,6 +30,8 @@ class Config:
     RAZORPAY_KEY_ID = os.environ.get('RAZORPAY_KEY_ID', 'YOUR_KEY_ID')
     RAZORPAY_KEY_SECRET = os.environ.get('RAZORPAY_KEY_SECRET', 'YOUR_KEY_SECRET')
     CALENDLY_API_KEY = os.environ.get('CALENDLY_API_KEY', 'YOUR_CALENDLY_API_KEY')
+    PAYMENT_MODE = os.environ.get('PAYMENT_MODE', 'live')
+    GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', 'AIzaSyB7JLNTFWY_Q5EFt-8J8kQDZ-UVNDpDZBY')
 
 # Initialize Flask App
 app = Flask(__name__)
@@ -47,7 +50,7 @@ class MockRazorpayClient:
 
     order = Order()
 
-if os.environ.get('FLASK_ENV') == 'development':
+if app.config['PAYMENT_MODE'] == 'test':
     razorpay_client = MockRazorpayClient(auth=('', ''))
 else:
     razorpay_client = razorpay.Client(
@@ -70,6 +73,9 @@ def get_groq_client():
         return None
 
 client = get_groq_client()
+
+# Initialize Gemini Client
+genai.configure(api_key=app.config['GEMINI_API_KEY'])
 
 # Data Models
 SKILLS_DATABASE = {
@@ -570,7 +576,6 @@ You are an expert technical interviewer creating a skills assessment. Based on t
                 ],
                 model="llama3-70b-8192",
                 temperature=0.6,
-                response_format={"type": "json_object"},
             )
             
             response_content = chat_completion.choices[0].message.content
@@ -687,18 +692,14 @@ class AssessmentEvaluator:
 
 class RoadmapGenerator:
     """Generate career roadmaps."""
-    
-    @staticmethod
-    def generate_roadmap_with_groq(tech_field, skill_level, skills):
-        """Generate detailed learning roadmap using Groq API."""
-        if not client:
-            print("⚠️ Groq client not available. Using fallback roadmap.")
-            return RoadmapGenerator.get_fallback_roadmap(tech_field, skill_level)
 
-        skills_str = ", ".join(skills) if skills else "General technical skills"
-        
-        prompt = f"""
-You are a senior career mentor and expert curriculum designer. 
+    @staticmethod
+    def generate_roadmap_with_gemini(tech_field, skill_level, skills):
+        """Generate detailed learning roadmap using Gemini API."""
+        try:
+            model = genai.GenerativeModel('gemini-2.5-flash')
+            skills_str = ", ".join(skills) if skills else "General technical skills"
+            prompt = f"""You are a senior career mentor and expert curriculum designer. 
 Create a **detailed, professional learning roadmap** for a beginner who wants to go from absolute basics to an advanced level in **{tech_field}**. 
 
 📌 **Context**:
@@ -766,39 +767,19 @@ Return a **valid JSON object** with the following structure only, no explanation
   }},
   "recommended_skills": ["List of most important skills to master"]
 }} """
-        try:
-            print(f"🧠 Generating detailed roadmap for {tech_field} with Groq...")
-            chat_completion = client.chat.completions.create(
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a JSON generator for detailed learning roadmaps. You will only output a valid JSON object with the specified structure."
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt,
-                    }
-                ],
-                model="llama3-70b-8192",
-                temperature=0.7,
-                response_format={"type": "json_object"},
-            )
+            response = model.generate_content(prompt)
+            # The response from the Gemini API might be wrapped in ```json ... ```, so we need to extract the JSON part.
+            text = response.text.strip()
+            if text.startswith("```json"):
+                text = text[7:]
+            if text.endswith("```"):
+                text = text[:-3]
             
-            response_content = chat_completion.choices[0].message.content
-            parsed_json = json.loads(response_content)
-
-            # Validate the response structure
-            required_fields = ['field', 'current_level', 'roadmap', 'timeline', 'learning_resources', 'project_ideas']
-            if not all(field in parsed_json for field in required_fields):
-                print("🚨 Groq response missing required fields. Using fallback.")
-                return RoadmapGenerator.get_fallback_roadmap(tech_field, skill_level)
-
-            print(f"✅ Successfully generated detailed roadmap from Groq for {tech_field}.")
+            parsed_json = json.loads(text)
             return parsed_json
-
         except Exception as e:
-            print(f"🚨 Groq API call failed: {e}. Using fallback roadmap.")
-        return RoadmapGenerator.get_fallback_roadmap(tech_field, skill_level)
+            print(f"🚨 Gemini API call failed: {e}. Using fallback roadmap.")
+            return RoadmapGenerator.get_fallback_roadmap(tech_field, skill_level)
 
     @staticmethod
     def get_fallback_roadmap(tech_field, skill_level):
@@ -831,6 +812,7 @@ Return a **valid JSON object** with the following structure only, no explanation
             }
         }
 
+
 # Routes
 @app.route('/')
 def index():
@@ -860,14 +842,24 @@ def roadmap_page():
     """Roadmap page."""
     if not session.get('roadmap_unlocked'):
         return redirect(url_for('payment'))
-    return render_template('roadmap.html')
+    calendly_url = session.get('calendly_scheduling_url')
+    return render_template('roadmap.html', calendly_url=calendly_url)
 
 @app.route('/schedule')
 def schedule_page():
     """Schedule page."""
     return render_template('schedule.html')
 
-# ----- Flowchart alignment helpers (non-breaking stubs) -----
+@app.route('/post-payment')
+def post_payment_page():
+    """Page shown after successful payment."""
+    if not session.get('roadmap_unlocked'):
+        return redirect(url_for('payment'))
+    calendly_url = session.get('calendly_scheduling_url')
+    return render_template('post_payment.html', calendly_url=calendly_url)
+
+
+# ----- Flowchart alignment helpers (non-breaking stubs) ----- 
 @app.route('/api/send_assessment_link', methods=['POST'])
 def send_assessment_link():
     """Simulate sending assessment link to user's email as per flowchart.
@@ -1155,6 +1147,12 @@ def upload_resume():
             return jsonify({'error': 'Could not generate enough questions from resume. Please try with a more detailed technical resume.'}), 400
         
         # Store in session for assessment page
+        session_id = datetime.now().strftime('%Y%m%d_%H%M%S')
+        questions_filename = f"{session_id}_questions.json"
+        questions_filepath = os.path.join(app.config['UPLOAD_FOLDER'], questions_filename)
+        with open(questions_filepath, 'w') as f:
+            json.dump(questions, f)
+
         session['assessment_data'] = {
             'skills': extracted_data['skills'],
             'projects': extracted_data['projects'], 
@@ -1162,8 +1160,8 @@ def upload_resume():
             'internships': extracted_data.get('internships', []),
             'education': extracted_data.get('education', []),
             'domain_expertise': extracted_data.get('domain', []),
-            'questions': questions,
-            'session_id': datetime.now().strftime('%Y%m%d_%H%M%S'),
+            'questions_file': questions_filename,
+            'session_id': session_id,
             'test_duration': 1800
         }
         
@@ -1255,6 +1253,35 @@ def payment():
         print(f"Error creating order: {str(e)}")
         return "Error creating payment order", 500
 
+def generate_and_store_calendly_link():
+    try:
+        # Get user information
+        user_info = calendly_client.about()
+        user_uri = user_info['resource']['uri']
+
+        # Get event types
+        event_types = calendly_client.get_event_types(user=user_uri)
+        if not event_types:
+            print("Error: No event types found for the user.")
+            return False
+
+        # Use the first available event type
+        event_type_uri = event_types[0]['uri']
+
+        # Create a single-use scheduling link
+        payload = {
+            "max_event_count": 1,
+            "owner": event_type_uri,
+            "owner_type": "EventType"
+        }
+        scheduling_link = calendly_client.create_scheduling_link(payload=payload)
+        
+        session['calendly_scheduling_url'] = scheduling_link['booking_url']
+        return True
+    except Exception as e:
+        print(f"Error creating Calendly event: {e}")
+        return False
+
 @app.route('/charge', methods=['POST'])
 def charge():
     """Handle successful payment callback from Razorpay."""
@@ -1268,7 +1295,9 @@ def charge():
         'razorpay_signature': signature
     }
 
-    def generate_and_store_roadmap():
+    try:
+        razorpay_client.utility.verify_payment_signature(params_dict)
+        
         tech_field = session.get('tech_field')
         results = session.get('assessment_results', {})
         skill_level = results.get('level', 'Beginner')
@@ -1276,28 +1305,21 @@ def charge():
         
         if not tech_field or not results:
             # This should not happen in a normal flow
-            return False
+            return redirect(url_for('index'))
 
-        roadmap = RoadmapGenerator.generate_roadmap_with_groq(tech_field, skill_level, skills)
+        # Generate roadmap with Gemini
+        roadmap = RoadmapGenerator.generate_roadmap_with_gemini(tech_field, skill_level, skills)
         session['roadmap_data'] = roadmap
         session['roadmap_unlocked'] = True
-        return True
-
-    if os.environ.get('FLASK_ENV') == 'development':
-        if generate_and_store_roadmap():
-            return redirect(url_for('roadmap_page'))
-        else:
-            return redirect(url_for('index')) # Or some error page
-    else:
-        try:
-            razorpay_client.utility.verify_payment_signature(params_dict)
-            if generate_and_store_roadmap():
-                return redirect(url_for('roadmap_page'))
-            else:
-                return redirect(url_for('index')) # Or some error page
-        except razorpay.errors.SignatureVerificationError as e:
-            print(f"Payment verification failed: {e}")
-            return redirect(url_for('payment'))
+        
+        # Generate Calendly link
+        generate_and_store_calendly_link()
+        
+        return redirect(url_for('post_payment_page'))
+        
+    except razorpay.errors.SignatureVerificationError as e:
+        print(f"Payment verification failed: {e}")
+        return redirect(url_for('payment'))
 
 @app.route('/failure')
 def payment_failure():
@@ -1328,7 +1350,7 @@ def send_full_roadmap_email():
         pass
     return jsonify({'success': True, 'message': 'Full roadmap emailed (simulated).', 'attachment': filename})
 
-@app.route('/api/download_roadmap', methods=['POST'])
+@app.route('/api/download_roadmap', methods=['GET'])
 def download_roadmap():
     if not session.get('roadmap_unlocked'):
         return jsonify({'error': 'Roadmap not unlocked. Please complete the payment first.'}), 403
@@ -1372,7 +1394,17 @@ RECOMMENDED SKILLS:
 @app.route('/api/get_assessment_data')
 def get_assessment_data():
     """Get assessment data for current session."""
-    return jsonify(session.get('assessment_data', {}))
+    assessment_data = session.get('assessment_data', {})
+    if 'questions_file' in assessment_data:
+        questions_filepath = os.path.join(app.config['UPLOAD_FOLDER'], assessment_data['questions_file'])
+        try:
+            with open(questions_filepath, 'r') as f:
+                assessment_data['questions'] = json.load(f)
+        except FileNotFoundError:
+            return jsonify({'error': 'Assessment data not found. Please start over.'}), 404
+        except json.JSONDecodeError:
+            return jsonify({'error': 'Failed to load assessment data. Please start over.'}), 500
+    return jsonify(assessment_data)
 
 @app.route('/api/get_results_data')
 def get_results_data():
@@ -1415,16 +1447,27 @@ def clear_session():
 def schedule_meeting():
     """Schedule a meeting with a mentor."""
     try:
-        # Get current user
-        user = calendly_client.get_current_user()
-        # Create a one-time event
-        event = calendly_client.create_one_off_event(
-            user['resource']['uri'],
-            "30 Minute Meeting",
-            "30min",
-            30,
-        )
-        return jsonify({'scheduling_url': event['resource']['scheduling_url']})
+        # Get user information
+        user_info = calendly_client.about()
+        user_uri = user_info['resource']['uri']
+
+        # Get event types
+        event_types = calendly_client.get_event_types(user=user_uri)
+        if not event_types:
+            return jsonify({'error': "No event types found for the user."}), 500
+
+        # Use the first available event type
+        event_type_uri = event_types[0]['uri']
+
+        # Create a single-use scheduling link
+        payload = {
+            "max_event_count": 1,
+            "owner": event_type_uri,
+            "owner_type": "EventType"
+        }
+        scheduling_link = calendly_client.create_scheduling_link(payload=payload)
+        
+        return jsonify({'scheduling_url': scheduling_link['booking_url']})
     except Exception as e:
         print(f"Error creating Calendly event: {e}")
         return jsonify({'error': "Could not create scheduling link. Please try again later."}), 500
