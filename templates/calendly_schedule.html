@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Schedule Meeting - Nath Shiva</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 40px 20px;
+            background-color: #f8f9fa;
+        }
+        
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            text-align: center;
+        }
+        
+        h1 {
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+        
+        .description {
+            color: #6c757d;
+            font-size: 16px;
+            margin-bottom: 30px;
+        }
+        
+        .calendly-btn {
+            background: linear-gradient(135deg, #006bff, #0056d3);
+            color: white;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            margin: 10px;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 4px rgba(0, 107, 255, 0.2);
+        }
+        
+        .calendly-btn:hover {
+            background: linear-gradient(135deg, #0056d3, #004bb5);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 107, 255, 0.3);
+        }
+        
+        .calendly-btn:active {
+            transform: translateY(0);
+        }
+        
+        .icon {
+            margin-right: 8px;
+        }
+        
+        .options {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #e9ecef;
+        }
+        
+        .option-text {
+            color: #6c757d;
+            font-size: 14px;
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📅 Schedule a Meeting</h1>
+        <p class="description">
+            Ready to connect? Choose your preferred way to schedule a 30-minute meeting with me.
+        </p>
+        
+        <!-- Primary CTA: Popup Widget -->
+        <button onclick="openCalendlyPopup()" class="calendly-btn">
+            <span class="icon">🚀</span>
+            Schedule Meeting (Quick Popup)
+        </button>
+        
+        <div class="options">
+            <p class="option-text">Or open in a new tab:</p>
+            <a href="{{ calendly_url }}" target="_blank" class="calendly-btn">
+                <span class="icon">🔗</span>
+                Schedule Meeting (New Tab)
+            </a>
+        </div>
+    </div>
+
+    <!-- Calendly embed script -->
+    <script src="https://assets.calendly.com/assets/external/widget.js" type="text/javascript" async></script>
+    
+    <script type="text/javascript">
+        function openCalendlyPopup() {
+            // Check if Calendly widget is loaded
+            if (typeof Calendly !== 'undefined') {
+                Calendly.initPopupWidget({
+                    url: '{{ calendly_url }}',
+                    // Optional: customize the popup
+                    prefill: {},
+                    utm: {}
+                });
+            } else {
+                // Fallback: open in new tab if widget fails to load
+                console.log('Calendly widget not loaded, opening in new tab');
+                window.open('{{ calendly_url }}', '_blank');
+            }
+        }
+
+        // Optional: Add some loading feedback
+        document.addEventListener('DOMContentLoaded', function() {
+            // You can add loading states here if needed
+            console.log('Calendly integration ready');
+        });
+    </script>
+</body>
+</html>

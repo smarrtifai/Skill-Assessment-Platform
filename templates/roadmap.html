@@ -127,6 +127,12 @@
     <i class="fas fa-download"></i> Download Roadmap
 </button>
 
+{% if calendly_url %}
+<a href="{{ calendly_url }}" target="_blank" class="btn-primary">
+    <i class="fas fa-calendar-alt"></i> Schedule a Meeting
+</a>
+{% endif %}
+
                 <button class="btn-secondary" onclick="shareRoadmap()">
                     <i class="fas fa-share-alt"></i> Share
                 </button>

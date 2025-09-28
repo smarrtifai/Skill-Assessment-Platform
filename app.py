@@ -1315,7 +1315,7 @@ def charge():
         # Generate Calendly link
         generate_and_store_calendly_link()
         
-        return redirect(url_for('post_payment_page'))
+        return redirect(url_for('schedule_meeting_page'))
         
     except razorpay.errors.SignatureVerificationError as e:
         print(f"Payment verification failed: {e}")
@@ -1471,6 +1471,13 @@ def schedule_meeting():
     except Exception as e:
         print(f"Error creating Calendly event: {e}")
         return jsonify({'error': "Could not create scheduling link. Please try again later."}), 500
+
+@app.route('/schedule_meeting_page')
+def schedule_meeting_page():
+    """Render the Calendly scheduling page."""
+    calendly_url = session.get('calendly_scheduling_url', "https://calendly.com/diekshapriyaamishra-smarrtifai/smarrtif-ai-services-discussion")
+    return render_template('calendly_schedule.html', calendly_url=calendly_url)
+
 
 @app.route('/calendly_webhook', methods=['POST'])
 def calendly_webhook():
