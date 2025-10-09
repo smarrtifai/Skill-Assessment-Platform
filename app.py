@@ -4,21 +4,20 @@ import random
 from datetime import datetime
 from flask import Flask, request, jsonify, render_template, send_file, session, redirect, url_for
 import traceback
-import traceback
 from werkzeug.utils import secure_filename
 import PyPDF2
 import docx
 from groq import Groq
 import uuid
 import razorpay
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 import hmac
 import hashlib
-import uuid
-import os
 from dotenv import load_dotenv
 import calendly
 import google.generativeai as genai
+import threading
+import time
+import re
 
 load_dotenv()
 
@@ -57,14 +56,25 @@ else:
         auth=(app.config['RAZORPAY_KEY_ID'], app.config['RAZORPAY_KEY_SECRET'])
     )
 
-# Initialize Calendly Client
-calendly_client = calendly.Calendly(app.config['CALENDLY_API_KEY'])
+# Initialize Calendly Client with error handling
+def get_calendly_client():
+    """Initialize Calendly client with error handling."""
+    api_key = app.config['CALENDLY_API_KEY']
+    if not api_key or api_key == 'YOUR_CALENDLY_API_KEY':
+        return None
+    try:
+        return calendly.Calendly(api_key)
+    except Exception:
+        return None
+
+calendly_client = get_calendly_client()
 
 
 # Initialize Groq Client
 def get_groq_client():
     """Initialize Groq client with error handling."""
     api_key = os.getenv('GROQ_API_KEY')
+    print(f"DEBUG: Read GROQ_API_KEY: '{api_key}'")
     if not api_key or api_key == 'your-groq-api-key-here':
         return None
     try:
@@ -74,8 +84,11 @@ def get_groq_client():
 
 client = get_groq_client()
 
-# Initialize Gemini Client
-genai.configure(api_key=app.config['GEMINI_API_KEY'])
+# Initialize Gemini Client with timeout configuration
+genai.configure(
+    api_key=app.config['GEMINI_API_KEY'],
+    transport='rest'  # Use REST transport for better timeout handling
+)
 
 # Data Models
 SKILLS_DATABASE = {
@@ -575,7 +588,7 @@ You are an expert technical interviewer creating a skills assessment. Based on t
                     }
                 ],
                 model="llama3-70b-8192",
-                temperature=0.6,
+                temperature=0.6
             )
             
             response_content = chat_completion.choices[0].message.content
@@ -692,93 +705,83 @@ class AssessmentEvaluator:
 
 class RoadmapGenerator:
     """Generate career roadmaps."""
+    
+    @staticmethod
+    def _generate_with_timeout(model, prompt, generation_config, timeout=20):
+        """Generate content with timeout using threading."""
+        result = [None]
+        exception = [None]
+        
+        def target():
+            try:
+                result[0] = model.generate_content(prompt, generation_config=generation_config)
+            except Exception as e:
+                exception[0] = e
+        
+        thread = threading.Thread(target=target)
+        thread.daemon = True
+        thread.start()
+        thread.join(timeout)
+        
+        if thread.is_alive():
+            raise TimeoutError(f"Gemini API call timed out after {timeout} seconds")
+        
+        if exception[0]:
+            raise exception[0]
+            
+        return result[0]
 
     @staticmethod
     def generate_roadmap_with_gemini(tech_field, skill_level, skills):
-        """Generate detailed learning roadmap using Gemini API."""
+        """Generate roadmap with robust JSON handling."""
         try:
-            model = genai.GenerativeModel('gemini-2.5-flash')
-            skills_str = ", ".join(skills) if skills else "General technical skills"
-            prompt = f"""You are a senior career mentor and expert curriculum designer. 
-Create a **detailed, professional learning roadmap** for a beginner who wants to go from absolute basics to an advanced level in **{tech_field}**. 
-
-📌 **Context**:
-- User's current skill level: {skill_level}
-- Identified skills: {skills_str}
-
-🎯 **Your Goal**:
-Design a step-by-step learning path that:
-- Covers fundamentals, intermediate, and advanced topics in a logical sequence.
-- Includes hands-on projects and challenges at every stage.
-- Stays engaging, motivating, and achievable for a self-learner.
-
-✅ **Roadmap Requirements**:
-1. **Foundational Stage (Beginner)**  
-   - Core topics explained simply  
-   - Practical exercises, small tasks, and real-life examples  
-
-2. **Intermediate Stage**  
-   - More challenging topics, industry best practices  
-   - Small-to-medium projects that build confidence  
-
-3. **Advanced Stage**  
-   - Expert-level techniques, tools, and optimization strategies  
-   - Complex projects that can be added to a professional portfolio  
-
-4. **Skill Validation**  
-   - Self-assessment methods: quizzes, challenges, peer review, certifications  
-
-5. **Learning Resources**  
-   - Specific recommendations: books, blogs, YouTube channels, online courses, communities  
-
-6. **Timeline**  
-   - Approximate time for each stage assuming 5-10 hours/week  
-
-7. **Output Format**  
-Return a **valid JSON object** with the following structure only, no explanations, no markdown:
-
-{{
-  "field": "{tech_field}",
-  "current_level": "{skill_level}",
-  "roadmap": {{
-    "beginner": ["Step-by-step beginner learning items with examples and exercises"],
-    "intermediate": ["Step-by-step intermediate learning items with projects"],
-    "advanced": ["Step-by-step advanced learning items with portfolio projects"]
-  }},
-  "timeline": {{
-    "beginner": "X-Y months",
-    "intermediate": "X-Y months", 
-    "advanced": "X+ months"
-  }},
-  "learning_resources": {{
-    "beginner": ["Specific beginner resources"],
-    "intermediate": ["Intermediate resources"],
-    "advanced": ["Advanced resources"]
-  }},
-  "project_ideas": {{
-    "beginner": ["Beginner project ideas"],
-    "intermediate": ["Intermediate project ideas"],
-    "advanced": ["Advanced project ideas"]
-  }},
-  "skill_validation": {{
-    "beginner": ["Quizzes", "Hands-on tasks"],
-    "intermediate": ["Portfolio projects", "Peer reviews"],
-    "advanced": ["Open-source contributions", "Certifications"]
-  }},
-  "recommended_skills": ["List of most important skills to master"]
-}} """
-            response = model.generate_content(prompt)
-            # The response from the Gemini API might be wrapped in ```json ... ```, so we need to extract the JSON part.
-            text = response.text.strip()
-            if text.startswith("```json"):
-                text = text[7:]
-            if text.endswith("```"):
-                text = text[:-3]
+            model = genai.GenerativeModel('gemini-2.0-flash-exp')
             
-            parsed_json = json.loads(text)
-            return parsed_json
+            prompt = f"""Generate a career roadmap for {tech_field} at {skill_level} level.
+
+Respond with ONLY this JSON structure (no extra text):
+{{
+"field": "{tech_field}",
+"current_level": "{skill_level}",
+"roadmap": {{
+"beginner": ["item1", "item2", "item3"],
+"intermediate": ["item1", "item2", "item3"],
+"advanced": ["item1", "item2", "item3"]
+}},
+"timeline": {{"beginner": "3-6 months", "intermediate": "6-12 months", "advanced": "12+ months"}},
+"learning_resources": {{"beginner": ["resource1"], "intermediate": ["resource2"], "advanced": ["resource3"]}},
+"project_ideas": {{"beginner": ["project1"], "intermediate": ["project2"], "advanced": ["project3"]}},
+"skill_validation": {{"beginner": ["method1"], "intermediate": ["method2"], "advanced": ["method3"]}},
+"recommended_skills": ["skill1", "skill2", "skill3"]
+}}"""
+            
+            response = model.generate_content(
+                prompt,
+                generation_config=genai.types.GenerationConfig(
+                    temperature=0.1,
+                    max_output_tokens=1500
+                )
+            )
+            
+            text = response.text.strip()
+            
+            # Extract JSON more carefully
+            import re
+            json_match = re.search(r'\{.*\}', text, re.DOTALL)
+            if not json_match:
+                raise ValueError("No JSON found")
+            
+            json_str = json_match.group(0)
+            
+            # Fix common JSON issues
+            json_str = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', json_str)  # Remove control chars
+            json_str = re.sub(r'\\(?!["\\/bfnrt])', r'\\\\', json_str)  # Fix backslashes
+            
+            parsed = json.loads(json_str)
+            return parsed
+            
         except Exception as e:
-            print(f"🚨 Gemini API call failed: {e}. Using fallback roadmap.")
+            print(f"🚨 Gemini API failed: {e}. Using fallback.")
             return RoadmapGenerator.get_fallback_roadmap(tech_field, skill_level)
 
     @staticmethod
@@ -982,8 +985,7 @@ You are an expert technical interviewer creating a skills assessment. Based on t
                     {"role": "user", "content": prompt}
                 ],
                 model="llama3-70b-8192",
-                temperature=0.6,
-                response_format={"type": "json_object"},
+                temperature=0.6
             )
             
             response_content = chat_completion.choices[0].message.content
@@ -1085,7 +1087,7 @@ Keep the response to 2-4 sentences.
                 {"role": "user", "content": prompt}
             ],
             model="llama3-8b-8192",
-            temperature=0.7,
+            temperature=0.7
         )
         response = chat_completion.choices[0].message.content
         return jsonify({'response': response})
@@ -1254,33 +1256,38 @@ def payment():
         return "Error creating payment order", 500
 
 def generate_and_store_calendly_link():
+    """Generate Calendly link with fallback to default URL."""
+    default_url = "https://calendly.com/diekshapriyaamishra-smarrtifai/smarrtif-ai-services-discussion"
+    
     try:
-        # Get user information
+        if not calendly_client:
+            print("⚠️ Calendly client not available. Using default URL.")
+            session['calendly_scheduling_url'] = default_url
+            return True
+            
         user_info = calendly_client.about()
         user_uri = user_info['resource']['uri']
-
-        # Get event types
         event_types = calendly_client.get_event_types(user=user_uri)
+        
         if not event_types:
-            print("Error: No event types found for the user.")
-            return False
+            print("⚠️ No event types found. Using default URL.")
+            session['calendly_scheduling_url'] = default_url
+            return True
 
-        # Use the first available event type
         event_type_uri = event_types[0]['uri']
-
-        # Create a single-use scheduling link
         payload = {
             "max_event_count": 1,
             "owner": event_type_uri,
             "owner_type": "EventType"
         }
         scheduling_link = calendly_client.create_scheduling_link(payload=payload)
-        
         session['calendly_scheduling_url'] = scheduling_link['booking_url']
         return True
+        
     except Exception as e:
-        print(f"Error creating Calendly event: {e}")
-        return False
+        print(f"⚠️ Calendly API error: {e}. Using default URL.")
+        session['calendly_scheduling_url'] = default_url
+        return True
 
 @app.route('/charge', methods=['POST'])
 def charge():
@@ -1315,7 +1322,7 @@ def charge():
         # Generate Calendly link
         generate_and_store_calendly_link()
         
-        return redirect(url_for('schedule_meeting_page'))
+        return redirect(url_for('roadmap_page'))
         
     except razorpay.errors.SignatureVerificationError as e:
         print(f"Payment verification failed: {e}")
@@ -1446,31 +1453,31 @@ def clear_session():
 @app.route('/schedule_meeting', methods=['POST'])
 def schedule_meeting():
     """Schedule a meeting with a mentor."""
+    default_url = "https://calendly.com/diekshapriyaamishra-smarrtifai/smarrtif-ai-services-discussion"
+    
     try:
-        # Get user information
+        if not calendly_client:
+            return jsonify({'scheduling_url': default_url})
+            
         user_info = calendly_client.about()
         user_uri = user_info['resource']['uri']
-
-        # Get event types
         event_types = calendly_client.get_event_types(user=user_uri)
+        
         if not event_types:
-            return jsonify({'error': "No event types found for the user."}), 500
+            return jsonify({'scheduling_url': default_url})
 
-        # Use the first available event type
         event_type_uri = event_types[0]['uri']
-
-        # Create a single-use scheduling link
         payload = {
             "max_event_count": 1,
             "owner": event_type_uri,
             "owner_type": "EventType"
         }
         scheduling_link = calendly_client.create_scheduling_link(payload=payload)
-        
         return jsonify({'scheduling_url': scheduling_link['booking_url']})
+        
     except Exception as e:
-        print(f"Error creating Calendly event: {e}")
-        return jsonify({'error': "Could not create scheduling link. Please try again later."}), 500
+        print(f"⚠️ Calendly API error: {e}. Using default URL.")
+        return jsonify({'scheduling_url': default_url})
 
 @app.route('/schedule_meeting_page')
 def schedule_meeting_page():
