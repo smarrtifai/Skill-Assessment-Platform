@@ -6,7 +6,7 @@
 
 An AI-powered platform to analyze your skills, identify gaps, and generate a personalized career roadmap. This application takes a user's resume or a skill assessment to provide a detailed analysis and a path forward to achieving their career goals in the tech industry.
 
-![Skills Assessment Platform Screenshot](Assets/Screenshot%202025-09-24%20181235.png)
+
 
 ## 📋 Table of Contents
 
