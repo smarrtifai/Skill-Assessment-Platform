@@ -71,18 +71,16 @@ calendly_client = get_calendly_client()
 
 
 # Initialize Groq Client
-def get_groq_client():
-    """Initialize Groq client with error handling."""
-    api_key = os.getenv('GROQ_API_KEY')
-    print(f"DEBUG: Read GROQ_API_KEY: '{api_key}'")
-    if not api_key or api_key == 'your-groq-api-key-here':
-        return None
+client = None
+groq_api_key = os.getenv('GROQ_API_KEY')
+if groq_api_key:
     try:
-        return Groq(api_key=api_key)
-    except Exception:
-        return None
-
-client = get_groq_client()
+        client = Groq(api_key=groq_api_key)
+        print("[SUCCESS] Groq client initialized successfully")
+    except Exception as e:
+        print(f"[ERROR] Failed to initialize Groq client: {e}")
+else:
+    print("[WARNING] GROQ_API_KEY not found in environment")
 
 # Initialize Gemini Client with timeout configuration
 genai.configure(
@@ -90,8 +88,25 @@ genai.configure(
     transport='rest'  # Use REST transport for better timeout handling
 )
 
-# Data Models
-SKILLS_DATABASE = {
+# Data Models for Non-Technical Skills Assessment
+NON_TECH_SKILLS_DATABASE = {
+    'communication': ['presented', 'wrote', 'negotiated', 'collaborated', 'documented', 'authored', 'public speaking', 'writing'],
+    'leadership': ['managed', 'led', 'supervised', 'mentored', 'directed', 'coordinated', 'oversaw', 'team lead'],
+    'project management': ['planned', 'scheduled', 'budgeted', 'delivered', 'launched', 'coordinated', 'managed projects'],
+    'sales': ['sold', 'revenue', 'targets', 'clients', 'customers', 'business development', 'account management'],
+    'marketing': ['campaigns', 'branding', 'social media', 'content', 'advertising', 'market research', 'digital marketing'],
+    'human resources': ['recruitment', 'hiring', 'employee', 'training', 'performance', 'hr policies', 'talent acquisition'],
+    'customer service': ['support', 'customer satisfaction', 'complaints', 'service quality', 'client relations'],
+    'finance': ['budget', 'financial analysis', 'accounting', 'cost management', 'financial planning', 'excel'],
+    'operations': ['process improvement', 'efficiency', 'workflow', 'operations management', 'logistics'],
+    'analytical skills': ['analyzed', 'interpreted', 'forecasted', 'modeled', 'quantified', 'data analysis', 'reporting'],
+    'problem-solving': ['solved', 'resolved', 'troubleshot', 'critical thinking', 'decision making'],
+    'teamwork': ['collaborated', 'partnered', 'team player', 'worked with', 'cross-functional'],
+    'creativity': ['designed', 'created', 'innovated', 'creative solutions', 'brainstorming']
+}
+
+# Technical skills for career transition context
+TECH_SKILLS_DATABASE = {
     'python': ['programming', 'development', 'scripting', 'automation'],
     'javascript': ['web development', 'frontend', 'backend', 'node.js'],
     'java': ['programming', 'enterprise', 'spring', 'android'],
@@ -100,16 +115,6 @@ SKILLS_DATABASE = {
     'react': ['frontend', 'web development', 'javascript'],
     'aws': ['cloud', 'devops', 'infrastructure'],
     'docker': ['containerization', 'devops', 'deployment']
-}
-
-SOFT_SKILLS_MAP = {
-    'leadership': ['managed', 'led', 'supervised', 'mentored', 'directed', 'coordinated', 'oversaw'],
-    'communication': ['presented', 'wrote', 'negotiated', 'collaborated', 'documented', 'authored'],
-    'problem-solving': ['solved', 'analyzed', 'optimized', 'resolved', 'debugged', 'troubleshot'],
-    'project management': ['planned', 'scheduled', 'budgeted', 'delivered', 'launched'],
-    'teamwork': ['collaborated', 'partnered', 'team player', 'worked with'],
-    'creativity': ['designed', 'created', 'innovated', 'prototyped'],
-    'analytical skills': ['analyzed', 'interpreted', 'forecasted', 'modeled', 'quantified']
 }
 
 TECH_FIELDS = {
@@ -457,14 +462,14 @@ class SkillExtractor:
         achievements = []
         internships = []
         
-        # Extract hard skills
-        for skill, keywords in SKILLS_DATABASE.items():
+        # Extract non-technical skills (primary focus)
+        for skill, keywords in NON_TECH_SKILLS_DATABASE.items():
             if skill in text_lower or any(keyword in text_lower for keyword in keywords):
-                found_skills.add(skill.capitalize())
+                found_skills.add(skill.replace('_', ' ').title())
         
-        # Extract soft skills from action verbs
-        for skill, verbs in SOFT_SKILLS_MAP.items():
-            if any(verb in text_lower for verb in verbs):
+        # Extract technical skills (for career transition context)
+        for skill, keywords in TECH_SKILLS_DATABASE.items():
+            if skill in text_lower or any(keyword in text_lower for keyword in keywords):
                 found_skills.add(skill.capitalize())
 
         # Extract project experience
@@ -535,7 +540,7 @@ class QuestionGenerator:
     def generate_questions_with_groq(extracted_data, num_questions=30):
         """Generate tailored MCQs using Groq based on extracted data."""
         if not client:
-            print("⚠️ Groq client not available. Using fallback questions.")
+            print("[WARNING] Groq client not available. Using fallback questions.")
             return QuestionGenerator.generate_fallback_questions(extracted_data, num_questions)
 
         skills_str = ", ".join(extracted_data.get('skills', []))
@@ -544,38 +549,52 @@ class QuestionGenerator:
         internships_str = "\n".join([f"- {i}" for i in extracted_data.get('internships', [])])
 
         prompt = f"""
-You are an expert technical interviewer creating a skills assessment. Based on the following resume data, generate {num_questions} multiple-choice questions (MCQs) that cross-question their experience.
+You are an expert assessment designer creating UNIQUE questions based on this specific resume. Each question must test the candidate's actual expertise in their stated skills and experiences.
 
-**Resume Data:**
+**RESUME CONTENT:**
 - **Skills:** {skills_str if skills_str else 'Not specified'}
 - **Projects:** {projects_str if projects_str else 'Not specified'}
 - **Achievements:** {achievements_str if achievements_str else 'Not specified'}
-- **Internships:** {internships_str if internships_str else 'Not specified'}
+- **Experience:** {internships_str if internships_str else 'Not specified'}
 
-**Instructions:**
-1. Generate exactly {num_questions} unique MCQs that are relevant to the provided skills, projects, and internships.
-2. The questions should cover a range of difficulties from easy to hard.
-3. Each question must have exactly 4 options.
-4. For about 30-50% of the questions, include a relevant code snippet within the 'question' field to test practical application. The code snippet should be properly escaped for JSON, using `\\n` for newlines.
-5. Indicate the correct answer using a zero-based index (0, 1, 2, or 3).
-6. The output **must** be a valid JSON list of objects, and nothing else. Do not include any introductory text, explanations, or markdown formatting like ```json.
+**CRITICAL REQUIREMENTS:**
+1. **NO GENERIC QUESTIONS** - Every question must reference their specific resume content
+2. **TEST REAL EXPERTISE** - Questions should reveal if they actually did what they claim
+3. **UNIQUE & NON-REPEATABLE** - Each question tests different aspects, no similar scenarios
+4. **PROGRESSIVE DIFFICULTY** - Start with basic recall, move to application, end with expert judgment
+5. **RESUME-SPECIFIC SCENARIOS** - Use their actual projects/achievements as question context
 
-**JSON Format Example:**
+**Question Types to Generate:**
+- Technical implementation questions about their specific projects
+- Problem-solving scenarios based on their achievements
+- Best practices questions for their stated skills
+- Troubleshooting questions for technologies they claim to know
+- Architecture/design questions for their experience level
+
+**EXAMPLE STRUCTURE:**
+"In your [SPECIFIC PROJECT FROM RESUME], when you [SPECIFIC ACHIEVEMENT], what was the most critical factor for success?"
+"Based on your experience with [SPECIFIC SKILL], how would you approach [REALISTIC SCENARIO]?"
+"Given your background in [SPECIFIC DOMAIN], what would be your first step when [EXPERT-LEVEL PROBLEM]?"
+
+**Generate exactly {num_questions} UNIQUE questions that:**
+- Reference specific resume elements (projects, skills, achievements)
+- Test actual knowledge depth, not just concepts
+- Progress from basic to expert-level scenarios
+- Cannot be answered by someone who didn't do the work
+- Cover different aspects of their claimed expertise
+
+**JSON OUTPUT:**
 [
   {{
-    "question": "What is the primary purpose of a 'useEffect' hook in React?",
-    "options": ["To manage component state", "To perform side effects in function components", "To declare a new component", "To handle routing"],
-    "correct": 1
-  }},
-  {{
-    "question": "What will be the output of the following Python code?\n\n```python\nmy_list = [1, 2, 3]\nprint(my_list[3])\n```",
-    "options": ["3", "None", "IndexError", "SyntaxError"],
-    "correct": 2
-  }},
-  ...
+    "question": "[RESUME-SPECIFIC QUESTION]",
+    "options": ["[OPTION A]", "[OPTION B]", "[OPTION C]", "[OPTION D]"],
+    "correct": [0-3],
+    "difficulty": "basic|intermediate|advanced",
+    "skill_area": "[SPECIFIC SKILL FROM RESUME]"
+  }}
 ]"""
         try:
-            print("🧠 Generating questions with Groq...")
+            print("[INFO] Generating questions with Groq...")
             chat_completion = client.chat.completions.create(
                 messages=[
                     {
@@ -587,81 +606,57 @@ You are an expert technical interviewer creating a skills assessment. Based on t
                         "content": prompt,
                     }
                 ],
-                model="llama3-70b-8192",
+                model="llama-3.3-70b-versatile",
                 temperature=0.6
             )
             
-            response_content = chat_completion.choices[0].message.content
+            response_content = chat_completion.choices[0].message.content.strip()
+            
+            # Clean response - remove markdown formatting if present
+            if response_content.startswith('```json'):
+                response_content = response_content[7:]
+            if response_content.endswith('```'):
+                response_content = response_content[:-3]
+            response_content = response_content.strip()
+            
             parsed_json = json.loads(response_content)
-
-            questions = parsed_json.get('questions') if isinstance(parsed_json, dict) else parsed_json
+            questions = parsed_json if isinstance(parsed_json, list) else parsed_json.get('questions', [])
  
             if not isinstance(questions, list) or not all('question' in q and 'options' in q and 'correct' in q for q in questions):
-                 print("🚨 Groq response JSON is malformed or empty. Using fallback.")
+                 print("[ERROR] Groq response JSON is malformed or empty. Using fallback.")
                  return QuestionGenerator.generate_fallback_questions(extracted_data, num_questions)
  
-            if len(questions) < num_questions:
-                print(f"🚨 Groq returned only {len(questions)}/{num_questions} questions. Using fallback to ensure count.")
+            if len(questions) < 10:
+                print(f"[ERROR] Groq returned only {len(questions)} questions. Using fallback.")
                 return QuestionGenerator.generate_fallback_questions(extracted_data, num_questions)
 
-            print(f"✅ Successfully generated {len(questions)} questions from Groq.")
-            return questions
+            print(f"[SUCCESS] Generated {len(questions)} questions from Groq.")
+            return questions[:num_questions]
 
         except Exception as e:
-            print(f"🚨 Groq API call failed: {e}. Using fallback questions.")
+            print(f"[ERROR] Groq API call failed: {e}. Using fallback questions.")
             return QuestionGenerator.generate_fallback_questions(extracted_data, num_questions)
 
     @staticmethod
     def generate_fallback_questions(extracted_data, num_questions):
-        """Generate contextual questions, ensuring the final count is met."""
-        skills = extracted_data.get('skills', [])
-        projects = extracted_data.get('projects', [])
-        achievements = extracted_data.get('achievements', [])
-        internships = extracted_data.get('internships', [])
+        """Generate non-technical fallback questions."""
+        non_tech_questions = [
+            {"question": "When working on a team project, how do you typically handle conflicting opinions?", "options": ["Avoid the conflict", "Listen to all viewpoints and find common ground", "Impose your own solution", "Let others decide"], "correct": 1},
+            {"question": "How do you approach learning a new process or tool at work?", "options": ["Wait for formal training", "Ask colleagues for help immediately", "Experiment and research on your own first", "Avoid using it"], "correct": 2},
+            {"question": "When presenting information to stakeholders, what's most important?", "options": ["Using complex terminology", "Making it clear and actionable", "Showing all available data", "Keeping it brief regardless of clarity"], "correct": 1},
+            {"question": "How do you prioritize tasks when everything seems urgent?", "options": ["Work on the easiest tasks first", "Assess impact and deadlines systematically", "Work on whatever was assigned last", "Ask your manager to prioritize everything"], "correct": 1},
+            {"question": "When you notice a process could be improved, what do you do?", "options": ["Keep working the old way", "Document the issue and propose solutions", "Complain to colleagues", "Change it without telling anyone"], "correct": 1},
+            {"question": "How do you handle feedback that you disagree with?", "options": ["Ignore it completely", "Consider the perspective and discuss constructively", "Argue immediately", "Accept it without question"], "correct": 1},
+            {"question": "When managing multiple deadlines, what's your approach?", "options": ["Work on everything simultaneously", "Create a priority matrix and timeline", "Focus only on the nearest deadline", "Ask for extensions on everything"], "correct": 1},
+            {"question": "How do you ensure effective communication in emails?", "options": ["Write as much detail as possible", "Use clear subject lines and concise language", "Copy everyone who might be interested", "Use technical jargon to sound professional"], "correct": 1},
+            {"question": "When leading a meeting, what's most important?", "options": ["Talking the most to show expertise", "Having a clear agenda and keeping discussions focused", "Making it as long as possible", "Avoiding difficult topics"], "correct": 1},
+            {"question": "How do you approach problem-solving in unfamiliar situations?", "options": ["Guess and hope for the best", "Break down the problem and research systematically", "Immediately ask someone else to solve it", "Avoid the situation entirely"], "correct": 1}
+        ]
         
-        specific_questions = []
-        
-        # 1. Gather questions for matched skills
-        for skill in skills:
-            skill_lower = skill.lower()
-            if skill_lower in SAMPLE_QUESTIONS:
-                skill_data = SAMPLE_QUESTIONS[skill_lower]
-                if isinstance(skill_data, dict):
-                    specific_questions.extend(skill_data.get('technical', []))
-                    if projects:
-                        specific_questions.extend(skill_data.get('project', []))
-                    if achievements:
-                        specific_questions.extend(skill_data.get('achievement', []))
-                    if internships:
-                        specific_questions.extend(skill_data.get('internship', []))
-                else:
-                    specific_questions.extend(skill_data)
-        
-        # 2. Create a unique set of questions based on the question text
-        unique_questions_map = {q['question']: q for q in specific_questions}
-
-        # 3. If not enough unique questions, supplement from the general pool
-        if len(unique_questions_map) < num_questions:
-            print(f"⚠️ Not enough specific questions ({len(unique_questions_map)}). Supplementing with general questions.")
-            all_questions_pool = []
-            for skill_data in SAMPLE_QUESTIONS.values():
-                if isinstance(skill_data, dict):
-                    for question_list in skill_data.values():
-                        all_questions_pool.extend(question_list)
-                else:
-                    all_questions_pool.extend(skill_data)
-            
-            for q in all_questions_pool:
-                if len(unique_questions_map) >= num_questions:
-                    break
-                if q['question'] not in unique_questions_map:
-                    unique_questions_map[q['question']] = q
-        
-        # 4. Convert map to list, shuffle, and return the required number
-        final_question_pool = list(unique_questions_map.values())
-        random.shuffle(final_question_pool)
-        
-        return final_question_pool[:num_questions]
+        # Repeat questions to reach desired count
+        questions = (non_tech_questions * (num_questions // len(non_tech_questions) + 1))[:num_questions]
+        random.shuffle(questions)
+        return questions
 
 class AssessmentEvaluator:
     """Evaluate assessment results."""
@@ -683,25 +678,58 @@ class AssessmentEvaluator:
     
     @staticmethod
     def analyze_performance(answers, questions, skills):
-        """Analyze performance to identify strengths, weaknesses, and skill gaps."""
+        """Advanced performance analysis with skill-specific insights."""
         strengths = []
         weaknesses = []
         skill_gaps = []
+        skill_scores = {}
         
-        # Simple analysis based on correct/incorrect answers
-        correct_count = sum(1 for i, answer in enumerate(answers) 
-                          if i < len(questions) and answer == questions[i]['correct'])
+        # Analyze by difficulty level and skill area
+        basic_correct = intermediate_correct = advanced_correct = 0
+        basic_total = intermediate_total = advanced_total = 0
         
-        if correct_count >= len(questions) * 0.8:
-            strengths = skills[:3]  # Top skills as strengths
-        elif correct_count >= len(questions) * 0.6:
-            strengths = skills[:2]
-            weaknesses = skills[2:3] if len(skills) > 2 else []
-        else:
-            weaknesses = skills[:2]
-            skill_gaps = ['Problem solving', 'Technical depth', 'Best practices']
+        for i, answer in enumerate(answers):
+            if i < len(questions):
+                question = questions[i]
+                is_correct = answer == question.get('correct', -1)
+                difficulty = question.get('difficulty', 'basic')
+                skill_area = question.get('skill_area', 'general')
+                
+                # Track by difficulty
+                if difficulty == 'basic':
+                    basic_total += 1
+                    if is_correct: basic_correct += 1
+                elif difficulty == 'intermediate':
+                    intermediate_total += 1
+                    if is_correct: intermediate_correct += 1
+                elif difficulty == 'advanced':
+                    advanced_total += 1
+                    if is_correct: advanced_correct += 1
+                
+                # Track by skill area
+                if skill_area not in skill_scores:
+                    skill_scores[skill_area] = {'correct': 0, 'total': 0}
+                skill_scores[skill_area]['total'] += 1
+                if is_correct:
+                    skill_scores[skill_area]['correct'] += 1
         
-        return strengths, weaknesses, skill_gaps
+        # Determine strengths and weaknesses
+        for skill, score_data in skill_scores.items():
+            percentage = (score_data['correct'] / score_data['total']) * 100 if score_data['total'] > 0 else 0
+            if percentage >= 75:
+                strengths.append(skill.title())
+            elif percentage < 50:
+                weaknesses.append(skill.title())
+        
+        # Identify skill gaps based on difficulty progression
+        if basic_total > 0 and (basic_correct / basic_total) < 0.6:
+            skill_gaps.append('Foundational concepts')
+        if intermediate_total > 0 and (intermediate_correct / intermediate_total) < 0.5:
+            skill_gaps.append('Practical application')
+        if advanced_total > 0 and (advanced_correct / advanced_total) < 0.4:
+            skill_gaps.append('Strategic thinking')
+        
+        return strengths[:3], weaknesses[:3], skill_gaps[:3]
 
 class RoadmapGenerator:
     """Generate career roadmaps."""
@@ -781,7 +809,7 @@ Respond with ONLY this JSON structure (no extra text):
             return parsed
             
         except Exception as e:
-            print(f"🚨 Gemini API failed: {e}. Using fallback.")
+            print(f"[ERROR] Gemini API failed: {e}. Using fallback.")
             return RoadmapGenerator.get_fallback_roadmap(tech_field, skill_level)
 
     @staticmethod
@@ -952,94 +980,115 @@ def start_interest_based_assessment():
     if client:
         interests_str = ", ".join(interests)
         prompt = f"""
-You are an expert technical interviewer creating a skills assessment. Based on the following user interests, generate {num_questions} multiple-choice questions (MCQs).
+You are a career transition specialist evaluating NON-TECHNICAL professionals interested in exploring technology. Create questions that assess their transferable skills and readiness for tech roles.
 
 **User Interests:** {interests_str}
 
-**Instructions:**
-1. Generate exactly {num_questions} unique MCQs that are relevant to the provided interests.
-2. The questions should cover a range of difficulties from easy to hard, suitable for a screening test.
-3. Each question must have exactly 4 options.
-4. For about 30-50% of the questions, include a relevant code snippet within the 'question' field to test practical application. The code snippet should be properly escaped for JSON, using `\\n` for newlines.
-5. Indicate the correct answer using a zero-based index (0, 1, 2, or 3).
-6. The output **must** be a valid JSON list of objects, and nothing else. Do not include any introductory text, explanations, or markdown formatting like ```json.
+**CRITICAL: Focus on NON-TECHNICAL skills assessment:**
+- Communication and presentation abilities
+- Problem-solving and analytical thinking
+- Project management and organization
+- Leadership and teamwork
+- Customer service and relationship building
+- Business understanding and process improvement
+- Learning agility and adaptability
 
-**JSON Format Example:**
+**Question Requirements:**
+1. Generate exactly {num_questions} questions for someone with NO technical background
+2. NO coding questions - focus on soft skills and business acumen
+3. Use workplace scenarios from their current field
+4. Test logical thinking through business problems
+5. Assess communication, leadership, and problem-solving
+6. Include questions about learning new tools/processes
+7. Each question needs exactly 4 options
+8. Output valid JSON only
+
+**Example Format:**
 [
   {{
-    "question": "What is a common use case for WebSockets in Web Development?",
-    "options": ["Storing user data", "Real-time bi-directional communication", "Styling web pages", "Querying a database"],
+    "question": "In your current role, when you need to explain a complex process to someone unfamiliar with it, what approach works best?",
+    "options": ["Use technical jargon to sound professional", "Break it down into simple steps with examples", "Send them documentation to read", "Have someone else explain it"],
     "correct": 1
   }},
   {{
-    "question": "What will be the output of the following Python code?\n\n```python\nmy_list = [1, 2, 3]\nprint(my_list[3])\n```",
-    "options": ["3", "None", "IndexError", "SyntaxError"],
-    "correct": 2
+    "question": "When facing a problem you've never encountered before, what's your typical first step?",
+    "options": ["Ask someone else to solve it", "Research and gather information", "Try random solutions", "Avoid the problem"],
+    "correct": 1
   }}
 ]"""
         try:
-            print(f"🧠 Generating questions for interests ({interests_str}) with Groq...")
+            print(f"[INFO] Generating questions for interests ({interests_str}) with Groq...")
             chat_completion = client.chat.completions.create(
                 messages=[
-                    {"role": "system", "content": "You are a JSON generator for technical skill assessment questions. You will only output a valid JSON list of objects."},
+                    {"role": "system", "content": "You are a JSON generator for non-technical professional skill assessment questions. Focus on soft skills, business acumen, and transferable abilities. Output only valid JSON."},
                     {"role": "user", "content": prompt}
                 ],
-                model="llama3-70b-8192",
+                model="llama-3.3-70b-versatile",
                 temperature=0.6
             )
             
-            response_content = chat_completion.choices[0].message.content
+            response_content = chat_completion.choices[0].message.content.strip()
+            
+            # Clean response - remove markdown formatting if present
+            if response_content.startswith('```json'):
+                response_content = response_content[7:]
+            if response_content.endswith('```'):
+                response_content = response_content[:-3]
+            response_content = response_content.strip()
+            
             parsed_json = json.loads(response_content)
-            questions = parsed_json.get('questions') if isinstance(parsed_json, dict) else parsed_json
+            questions = parsed_json if isinstance(parsed_json, list) else parsed_json.get('questions', [])
 
-            if isinstance(questions, list) and len(questions) >= num_questions and all('question' in q and 'options' in q and 'correct' in q for q in questions):
-                print(f"✅ Successfully generated {len(questions)} questions from Groq for interests.")
+            if isinstance(questions, list) and len(questions) >= 10 and all('question' in q and 'options' in q and 'correct' in q for q in questions):
+                print(f"[SUCCESS] Generated {len(questions)} questions from Groq for interests.")
                 session['assessment_data'] = {
                     'skills': interests, 'projects': [], 'achievements': [], 'internships': [],
-                    'questions': questions, 'test_duration': 1800
+                    'questions': questions[:num_questions], 'test_duration': 1800
                 }
                 return jsonify({'redirect': '/assessment'})
             else:
-                print("🚨 Groq response for interests is malformed or incomplete. Using fallback.")
-                if isinstance(questions, list):
-                    print(f"   (Received {len(questions)} questions, expected {num_questions})")
+                print(f"[ERROR] Invalid Groq response. Got {len(questions) if isinstance(questions, list) else 0} questions.")
         except Exception as e:
-            print(f"🚨 Groq API call for interests failed: {e}. Using fallback questions.")
+            print(f"[ERROR] Groq API call for interests failed: {e}. Using fallback questions.")
 
-    # Fallback to static questions if Groq fails or is not available
-    print("⚠️ Using fallback question generator for interests.")
-    interest_to_skill_map = {
-        'Frontend Development': ['javascript', 'react'],
-        'Backend Development': ['python', 'sql', 'java'],
-        'Full-Stack Development': ['javascript', 'react', 'python', 'sql'],
-        'Machine Learning': ['machine learning', 'python'],
-        'Deep Learning': ['machine learning', 'python'],
-        'NLP': ['machine learning', 'python'],
-        'Ethical Hacking': ['cybersecurity'],
-        'Network Security': ['cybersecurity'],
-        'Cloud Security': ['cybersecurity', 'aws'],
-        'LLM Development': ['gen ai', 'python'],
-        'Prompt Engineering': ['gen ai'],
-        'RAG Systems': ['gen ai', 'python'],
-        'Data Visualization': ['business analytics', 'python'],
-        'Business Intelligence': ['business analytics', 'sql'],
-        'Data Engineering': ['sql', 'python', 'aws'],
-        'Autonomous Agents': ['agentic ai', 'python'],
-        'Multi-Agent Systems': ['agentic ai', 'python'],
-        'DevOps': ['docker', 'aws'],
-        'Cloud Computing': ['aws', 'docker']
-    }
-    skills_to_query = list(set(skill for interest in interests for skill in interest_to_skill_map.get(interest, [])))
-
-    questions = QuestionGenerator.generate_fallback_questions(
-        {'skills': skills_to_query, 'projects': [], 'achievements': []}, num_questions=num_questions
-    )
-
-    if not questions:
-        return jsonify({'error': 'We couldn\'t generate an assessment for your selected interests at this time.'}), 400
+    # Fallback to non-technical questions if Groq fails
+    print("[WARNING] Using non-technical fallback questions.")
+    
+    # Generate non-technical questions based on soft skills
+    non_tech_questions = [
+        {
+            "question": "When working on a team project, how do you typically handle conflicting opinions?",
+            "options": ["Avoid the conflict", "Listen to all viewpoints and find common ground", "Impose your own solution", "Let others decide"],
+            "correct": 1
+        },
+        {
+            "question": "How do you approach learning a new process or tool at work?",
+            "options": ["Wait for formal training", "Ask colleagues for help immediately", "Experiment and research on your own first", "Avoid using it"],
+            "correct": 2
+        },
+        {
+            "question": "When presenting information to stakeholders, what's most important?",
+            "options": ["Using complex terminology", "Making it clear and actionable", "Showing all available data", "Keeping it brief regardless of clarity"],
+            "correct": 1
+        },
+        {
+            "question": "How do you prioritize tasks when everything seems urgent?",
+            "options": ["Work on the easiest tasks first", "Assess impact and deadlines systematically", "Work on whatever was assigned last", "Ask your manager to prioritize everything"],
+            "correct": 1
+        },
+        {
+            "question": "When you notice a process could be improved, what do you do?",
+            "options": ["Keep working the old way", "Document the issue and propose solutions", "Complain to colleagues", "Change it without telling anyone"],
+            "correct": 1
+        }
+    ]
+    
+    # Repeat questions to reach desired count
+    questions = (non_tech_questions * (num_questions // len(non_tech_questions) + 1))[:num_questions]
 
     session['assessment_data'] = {
-        'skills': interests, 'projects': [], 'achievements': [], 'internships': [],
+        'skills': ['Communication', 'Problem Solving', 'Leadership', 'Teamwork'], 
+        'projects': [], 'achievements': [], 'internships': [],
         'questions': questions, 'test_duration': 1800
     }
     return jsonify({'redirect': '/assessment'})
@@ -1086,13 +1135,13 @@ Keep the response to 2-4 sentences.
                 {"role": "system", "content": "You are an AI Career Mentor providing advice to a user based on their skill assessment results."},
                 {"role": "user", "content": prompt}
             ],
-            model="llama3-8b-8192",
+            model="llama-3.3-70b-versatile",
             temperature=0.7
         )
         response = chat_completion.choices[0].message.content
         return jsonify({'response': response})
     except Exception as e:
-        print(f"🚨 AI Mentor (Groq) API call failed: {e}")
+        print(f"[ERROR] AI Mentor (Groq) API call failed: {e}")
         return jsonify({'response': 'Sorry, I encountered an error while trying to answer. Please try again.'}), 500
 
 @app.route('/api/upload', methods=['POST'])
@@ -1261,7 +1310,7 @@ def generate_and_store_calendly_link():
     
     try:
         if not calendly_client:
-            print("⚠️ Calendly client not available. Using default URL.")
+            print("[WARNING] Calendly client not available. Using default URL.")
             session['calendly_scheduling_url'] = default_url
             return True
             
@@ -1270,7 +1319,7 @@ def generate_and_store_calendly_link():
         event_types = calendly_client.get_event_types(user=user_uri)
         
         if not event_types:
-            print("⚠️ No event types found. Using default URL.")
+            print("[WARNING] No event types found. Using default URL.")
             session['calendly_scheduling_url'] = default_url
             return True
 
@@ -1357,7 +1406,7 @@ def send_full_roadmap_email():
         pass
     return jsonify({'success': True, 'message': 'Full roadmap emailed (simulated).', 'attachment': filename})
 
-@app.route('/api/download_roadmap', methods=['GET'])
+@app.route('/api/download_roadmap', methods=['GET', 'POST'])
 def download_roadmap():
     if not session.get('roadmap_unlocked'):
         return jsonify({'error': 'Roadmap not unlocked. Please complete the payment first.'}), 403
@@ -1366,34 +1415,92 @@ def download_roadmap():
     if not data:
         return jsonify({'error': 'No roadmap data found'}), 400
     
-    roadmap_text = f"""
-PERSONALIZED CAREER ROADMAP
-===========================
+    # Build comprehensive roadmap content
+    roadmap_sections = []
+    
+    # Header
+    roadmap_sections.append(f"""
+🚀 PERSONALIZED CAREER ROADMAP
+===============================
 
+📋 OVERVIEW:
+-----------
 Tech Field: {data.get('field', 'N/A')}
 Current Level: {data.get('current_level', 'N/A')}
 Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-
-LEARNING PATH:
---------------
-Beginner Level ({data.get('timeline', {}).get('beginner', 'N/A')}):
-{chr(10).join('- ' + item for item in data.get('roadmap', {}).get('beginner', []))}
-
-Intermediate Level ({data.get('timeline', {}).get('intermediate', 'N/A')}):
-{chr(10).join('- ' + item for item in data.get('roadmap', {}).get('intermediate', []))}
-
-Advanced Level ({data.get('timeline', {}).get('advanced', 'N/A')}):
-{chr(10).join('- ' + item for item in data.get('roadmap', {}).get('advanced', []))}
-
-RECOMMENDED SKILLS:
-------------------
-{chr(10).join('- ' + skill for skill in data.get('recommended_skills', []))}
-"""
-
-    filename = f"roadmap_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+""")
+    
+    # Learning Path
+    roadmap_sections.append("\n📚 LEARNING PATH:")
+    roadmap_sections.append("-" * 50)
+    
+    roadmap = data.get('roadmap', {})
+    timeline = data.get('timeline', {})
+    
+    for level in ['beginner', 'intermediate', 'advanced']:
+        level_items = roadmap.get(level, [])
+        level_timeline = timeline.get(level, 'N/A')
+        if level_items:
+            roadmap_sections.append(f"\n🎯 {level.upper()} LEVEL ({level_timeline}):")
+            for item in level_items:
+                roadmap_sections.append(f"  • {item}")
+    
+    # Learning Resources
+    learning_resources = data.get('learning_resources', {})
+    if learning_resources:
+        roadmap_sections.append("\n\n📖 LEARNING RESOURCES:")
+        roadmap_sections.append("-" * 50)
+        for level in ['beginner', 'intermediate', 'advanced']:
+            resources = learning_resources.get(level, [])
+            if resources:
+                roadmap_sections.append(f"\n{level.upper()} Resources:")
+                for resource in resources:
+                    roadmap_sections.append(f"  • {resource}")
+    
+    # Project Ideas
+    project_ideas = data.get('project_ideas', {})
+    if project_ideas:
+        roadmap_sections.append("\n\n💡 PROJECT IDEAS:")
+        roadmap_sections.append("-" * 50)
+        for level in ['beginner', 'intermediate', 'advanced']:
+            projects = project_ideas.get(level, [])
+            if projects:
+                roadmap_sections.append(f"\n{level.upper()} Projects:")
+                for project in projects:
+                    roadmap_sections.append(f"  • {project}")
+    
+    # Skill Validation
+    skill_validation = data.get('skill_validation', {})
+    if skill_validation:
+        roadmap_sections.append("\n\n✅ SKILL VALIDATION:")
+        roadmap_sections.append("-" * 50)
+        for level in ['beginner', 'intermediate', 'advanced']:
+            validations = skill_validation.get(level, [])
+            if validations:
+                roadmap_sections.append(f"\n{level.upper()} Validation:")
+                for validation in validations:
+                    roadmap_sections.append(f"  • {validation}")
+    
+    # Recommended Skills
+    recommended_skills = data.get('recommended_skills', [])
+    if recommended_skills:
+        roadmap_sections.append("\n\n🎯 RECOMMENDED SKILLS:")
+        roadmap_sections.append("-" * 50)
+        for skill in recommended_skills:
+            roadmap_sections.append(f"  • {skill}")
+    
+    # Footer
+    roadmap_sections.append("\n\n" + "=" * 50)
+    roadmap_sections.append("Generated by Smarrtif AI Skills Assessment Platform")
+    roadmap_sections.append("For personalized mentoring, schedule a session with our experts!")
+    roadmap_sections.append("=" * 50)
+    
+    roadmap_text = "\n".join(roadmap_sections)
+    
+    filename = f"Career_Roadmap_{data.get('field', 'Tech').replace('/', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
     filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
 
-    with open(filepath, 'w') as f:
+    with open(filepath, 'w', encoding='utf-8') as f:
         f.write(roadmap_text)
 
     return send_file(filepath, as_attachment=True, download_name=filename)
@@ -1438,9 +1545,9 @@ def get_roadmap_data():
         wrapped['skill_validation'] = {'beginner': wrapped.get('skill_validation', {}).get('beginner', [])}
         wrapped['recommended_skills'] = wrapped.get('recommended_skills', []) # Keep all recommended skills
 
-    print(f"🔍 get_roadmap_data - Session keys: {list(session.keys())}")
-    print(f"🔍 get_roadmap_data - Roadmap data: {data}")
-    print(f"🔍 get_roadmap_data - Wrapped data: {wrapped}")
+    print(f"[DEBUG] get_roadmap_data - Session keys: {list(session.keys())}")
+    print(f"[DEBUG] get_roadmap_data - Roadmap data: {data}")
+    print(f"[DEBUG] get_roadmap_data - Wrapped data: {wrapped}")
     
     return jsonify(wrapped)
 
