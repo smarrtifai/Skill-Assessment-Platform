@@ -1307,7 +1307,7 @@ def payment():
         )
     except Exception as e:
         print(f"Error creating order: {str(e)}")
-        return "Error creating payment order", 500
+        return redirect(url_for('payment_failure'))
 
 def generate_and_store_calendly_link():
     """Generate Calendly link with fallback to default URL."""
@@ -1358,6 +1358,7 @@ def charge():
 
     try:
         razorpay_client.utility.verify_payment_signature(params_dict)
+        print(f"[SUCCESS] Payment verified successfully. Payment ID: {payment_id}")
         
         tech_field = session.get('tech_field')
         results = session.get('assessment_results', {})
@@ -1365,9 +1366,10 @@ def charge():
         skills = results.get('skills', [])
         
         if not tech_field or not results:
-            # This should not happen in a normal flow
+            print(f"[ERROR] Missing session data - tech_field: {tech_field}, results: {bool(results)}")
             return redirect(url_for('index'))
 
+        print(f"[INFO] Generating roadmap for {tech_field} at {skill_level} level")
         # Generate roadmap with Gemini
         roadmap = RoadmapGenerator.generate_roadmap_with_gemini(tech_field, skill_level, skills)
         session['roadmap_data'] = roadmap
@@ -1376,11 +1378,15 @@ def charge():
         # Generate Calendly link
         generate_and_store_calendly_link()
         
+        print(f"[SUCCESS] Payment processing complete. Redirecting to roadmap page.")
         return redirect(url_for('roadmap_page'))
         
     except razorpay.errors.SignatureVerificationError as e:
-        print(f"Payment verification failed: {e}")
-        return redirect(url_for('payment'))
+        print(f"[ERROR] Payment verification failed: {e}")
+        return redirect(url_for('payment_failure'))
+    except Exception as e:
+        print(f"[ERROR] Unexpected error in payment processing: {e}")
+        return redirect(url_for('payment_failure'))
 
 @app.route('/failure')
 def payment_failure():

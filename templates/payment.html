@@ -72,7 +72,7 @@
                         <i class="fas fa-lock"></i> Secure Payment with Razorpay
                     </button>
                     
-                    <div id="payment-status" style="margin-top: 1rem; text-align: center;"></div>
+                    <div id="payment-status" style="margin-top: 1rem; text-align: center; min-height: 24px;"></div>
                     
                     <div style="text-align: center; margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid rgba(255,255,255,0.2);">
                         <p style="color: rgba(255,255,255,0.7); font-size: 0.9rem;">
@@ -103,13 +103,94 @@ var options = {
     "description": "Career Consultation & Roadmap Service",
     "order_id": "{{ order_id }}",
     "handler": function (response){
-        document.getElementById('payment-status').innerHTML = '<div style="color: #10b981; font-weight: 600;"><i class="fas fa-check-circle"></i> Payment Successful! Redirecting...</div>';
-        document.getElementById('razorpay_payment_id').value = response.razorpay_payment_id;
-        document.getElementById('razorpay_order_id').value = response.razorpay_order_id;
-        document.getElementById('razorpay_signature').value = response.razorpay_signature;
+        // Hide the payment page content immediately
+        document.querySelector('.container').style.display = 'none';
+        
+        // Show processing message with home page layout
+        document.body.innerHTML = `
+            <nav class="navbar">
+                <div class="nav-container">
+                    <div class="nav-brand">
+                        <a href="/">
+                            <img src="{{ url_for('static', filename='images/Screenshot 2025-08-01 092513.png') }}" alt="SMARRTIFAI" class="logo">
+                        </a>
+                    </div>
+                    <div class="nav-steps">
+                        <div class="step"><span>1</span> Upload</div>
+                        <div class="step"><span>2</span> Assess</div>
+                        <div class="step"><span>3</span> Results</div>
+                        <div class="step active"><span>4</span> Processing</div>
+                    </div>
+                </div>
+            </nav>
+            
+            <div class="container">
+                <div class="onboarding-section">
+                    <div class="onboarding-content">
+                        <div class="chat-container">
+                            <div class="section-header" style="text-align: center; margin-bottom: 2rem;">
+                                <div class="section-icon" style="background: linear-gradient(135deg, #10b981, #059669); margin: 0 auto 1rem; position: relative;">
+                                    <i class="fas fa-check-circle" style="animation: checkPulse 2s ease-in-out infinite;"></i>
+                                    <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 80px; height: 80px; border: 3px solid rgba(16, 185, 129, 0.3); border-radius: 50%; animation: ripple 2s ease-out infinite;"></div>
+                                </div>
+                                <h2 style="color: #0f172a; margin-bottom: 0.5rem; font-weight: 700;">Payment Successful!</h2>
+                                <p style="color: #475569;">🚀 Generating your personalized career roadmap...</p>
+                            </div>
+                            
+                            <div style="background: #f8fafc; padding: 2rem; border-radius: 15px; margin-bottom: 2rem; border: 2px solid #e2e8f0; text-align: center;">
+                                <!-- Enhanced loading spinner -->
+                                <div style="position: relative; margin-bottom: 2rem; display: inline-block;">
+                                    <div style="width: 60px; height: 60px; border: 4px solid #e2e8f0; border-radius: 50%; border-top-color: #ef4444; animation: spin 1s linear infinite;"></div>
+                                    <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 40px; height: 40px; border: 3px solid #f1f5f9; border-radius: 50%; border-bottom-color: #f97316; animation: spin 1.5s linear infinite reverse;"></div>
+                                </div>
+                                
+                                <!-- Progress indicators -->
+                                <div style="display: flex; justify-content: center; gap: 1rem; margin-bottom: 2rem; flex-wrap: wrap;">
+                                    <div style="display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1.5rem; background: linear-gradient(135deg, #ef4444, #f97316); color: white; border-radius: 25px; font-size: 0.9rem; font-weight: 600; animation: fadeInUp 1s ease-out 0.5s both;">
+                                        <i class="fas fa-brain"></i> AI Analysis
+                                    </div>
+                                    <div style="display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1.5rem; background: linear-gradient(135deg, #10b981, #059669); color: white; border-radius: 25px; font-size: 0.9rem; font-weight: 600; animation: fadeInUp 1s ease-out 1s both;">
+                                        <i class="fas fa-map-marked-alt"></i> Roadmap Creation
+                                    </div>
+                                </div>
+                                
+                                <!-- Status message -->
+                                <p style="margin: 0; color: #64748b; font-size: 0.95rem; animation: pulse 2s ease-in-out infinite;">Please wait while we prepare your personalized journey...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <style>
+                @keyframes spin { to { transform: rotate(360deg); } }
+                @keyframes checkPulse {
+                    0%, 100% { transform: scale(1); }
+                    50% { transform: scale(1.1); }
+                }
+                @keyframes ripple {
+                    0% { transform: translate(-50%, -50%) scale(0.8); opacity: 1; }
+                    100% { transform: translate(-50%, -50%) scale(1.4); opacity: 0; }
+                }
+                @keyframes fadeInUp {
+                    from { transform: translateY(20px); opacity: 0; }
+                    to { transform: translateY(0); opacity: 1; }
+                }
+                @keyframes pulse {
+                    0%, 100% { opacity: 0.8; }
+                    50% { opacity: 1; }
+                }
+            </style>
+            <form id="payment-form" action="/charge" method="POST" style="display: none;">
+                <input type="hidden" name="razorpay_payment_id" value="${response.razorpay_payment_id}">
+                <input type="hidden" name="razorpay_order_id" value="${response.razorpay_order_id}">
+                <input type="hidden" name="razorpay_signature" value="${response.razorpay_signature}">
+            </form>
+        `;
+        
+        // Submit form immediately
         setTimeout(() => {
             document.getElementById('payment-form').submit();
-        }, 1500);
+        }, 500);
     },
     "prefill": {
         "name": "Valued Customer",
@@ -125,7 +206,7 @@ var options = {
 };
 var rzp1 = new Razorpay(options);
 document.getElementById('pay-btn').onclick = function(e){
-    document.getElementById('payment-status').innerHTML = '<div style="color: rgba(255,255,255,0.8);"><i class="fas fa-spinner fa-spin"></i> Opening secure payment...</div>';
+    document.getElementById('payment-status').innerHTML = '<div style="color: #10b981; font-weight: 600;"><i class="fas fa-spinner fa-spin"></i> Opening secure payment...</div>';
     rzp1.open();
     e.preventDefault();
 }
