@@ -3,99 +3,156 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bill</title>
+    <title>Bill - Skills Assessment Platform</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 600px;
-            margin: 50px auto;
-            padding: 20px;
-            background-color: #f5f5f5;
-        }
-        .bill-container {
-            background: white;
-            padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            text-align: center;
-        }
-        .service-header {
-            background-color: #e88d44;
-            color: white;
-            padding: 20px;
-            border-radius: 10px 10px 0 0;
-            margin: -30px -30px 20px -30px;
-        }
-        .service-header h2 {
-            margin: 0;
-        }
-        .price {
-            font-size: 48px;
-            font-weight: bold;
-            color: #333;
-        }
-        .price .currency {
-            font-size: 24px;
-            vertical-align: super;
-        }
-        .features {
-            list-style: none;
-            padding: 0;
-            margin: 30px 0;
-            text-align: left;
-        }
-        .features li {
-            margin-bottom: 15px;
-            display: flex;
-            align-items: center;
-        }
-        .features li::before {
-            content: '✔';
-            color: #e88d44;
-            font-size: 20px;
-            margin-right: 10px;
-        }
-        .buy-now-btn {
-            background-color: #e88d44;
-            color: white;
-            padding: 15px 30px;
-            border: none;
-            border-radius: 5px;
-            font-size: 16px;
-            cursor: pointer;
-            text-decoration: none;
-            display: inline-block;
-        }
-        .buy-now-btn:hover {
-            background-color: #d4752d;
-        }
-        .invoice-id {
-            margin-bottom: 20px;
-            color: #777;
-        }
-    </style>
+  body, p, span, div, h1, h2, h3, h4, h5, h6, a {
+    color: #000 !important;
+  }
+</style>
+
 </head>
 <body>
-    <div class="bill-container">
-        <div class="service-header">
-            <h2>Consultation Service</h2>
-            <p>Career Development In AI/ML</p>
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <a href="/">
+                    <img src="{{ url_for('static', filename='images/Screenshot 2025-08-01 092513.png') }}" alt="SMARRTIFAI" class="logo">
+                </a>
+            </div>
+            <div class="nav-steps">
+                <div class="step"><span>1</span> Upload</div>
+                <div class="step"><span>2</span> Assess</div>
+                <div class="step"><span>3</span> Results</div>
+                <div class="step active"><span>4</span> Payment</div>
+            </div>
         </div>
-        <div class="invoice-id">
-            <strong>Invoice ID:</strong> {{ invoice_id }}
+    </nav>
+
+    <div class="container">
+        <div class="onboarding-section">
+            <div class="onboarding-content">
+                <div class="chat-container">
+                    <div class="section-header" style="text-align: center; margin-bottom: 2rem;">
+                        <div class="section-icon" style="background: linear-gradient(135deg, #ef4444, #f97316); margin: 0 auto 1rem; animation: pulse 2s infinite;"><i class="fas fa-receipt"></i></div>
+                        <h2 style="color: #1f2937; margin-bottom: 0.5rem; font-size: 2rem; font-weight: 700;">💰 Investment Summary</h2>
+                        <p style="color: #6b7280; font-size: 1.1rem;">Your personalized career transformation package</p>
+                    </div>
+                    
+                    <!-- Stats Overview -->
+                    <div style="background: rgba(255,255,255,0.1); padding: 1.5rem; border-radius: 15px; margin-bottom: 2rem; backdrop-filter: blur(10px); animation: fadeInUp 0.6s ease;">
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 1.5rem; text-align: center;">
+                            <div>
+                                <div style="font-size: 2rem; font-weight: 700; color: rgb(10, 1, 1); margin-bottom: 0.5rem;">₹999</div>
+                                <div style="color: rgba(7, 0, 0, 0.8); font-size: 0.9rem;">Total Investment</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 2rem; font-weight: 700; color: rgb(7, 0, 0); margin-bottom: 0.5rem;">5+</div>
+                                <div style="color: rgba(7, 0, 0, 0.8); font-size: 0.9rem;">Premium Services</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 2rem; font-weight: 700; color: rgb(10, 0, 0); margin-bottom: 0.5rem;">∞</div>
+                                <div style="color: rgba(8, 0, 0, 0.8); font-size: 0.9rem;">Lifetime Access</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Invoice Details -->
+                    <div style="background: rgba(255,255,255,0.1); padding: 1.5rem; border-radius: 15px; margin-bottom: 2rem; backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.2); animation: slideInMessage 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55);">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span style="color: rgba(255,255,255,0.8); font-size: 0.9rem; font-weight: 600;">📋 Invoice ID:</span>
+                            <span style="color: white; font-weight: 700; font-family: monospace; background: rgba(255,255,255,0.1); padding: 0.5rem 1rem; border-radius: 8px;">{{ invoice_id }}</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Service Package -->
+                    <div style="background: rgba(255,255,255,0.1); padding: 2rem; border-radius: 20px; margin-bottom: 2rem; backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.2); position: relative; overflow: hidden; animation: containerFadeIn 0.8s ease;">
+                        <!-- Floating background elements -->
+                        <div style="position: absolute; top: -50%; left: -50%; width: 200%; height: 200%; background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%); animation: float 6s ease-in-out infinite;"></div>
+                        
+                        <div style="text-align: center; margin-bottom: 2rem; position: relative; z-index: 2;">
+                            <div style="display: inline-block; background: rgba(255,255,255,0.1); padding: 0.5rem 1rem; border-radius: 25px; margin-bottom: 1rem;">
+                                <span style="color: rgba(10, 0, 0, 0.9); font-size: 0.9rem; font-weight: 600;">🎆 PREMIUM PACKAGE</span>
+                            </div>
+                            <h3 style="color: #1f2937; margin-bottom: 0.5rem; font-size: 1.75rem; font-weight: 700;">🚀 Career Consultation Service</h3>
+                            <p style="color: #00040a; margin-bottom: 1.5rem; font-size: 1.1rem;">Comprehensive AI-Powered Career Development</p>
+                            <div style="font-size: 3.5rem; font-weight: 700; color: #ef4444; margin-bottom: 0.5rem; text-shadow: 0 4px 8px rgba(0,0,0,0.3);">
+                                <span style="font-size: 1.8rem; vertical-align: super;">₹</span>999
+                            </div>
+                            <p style="color: #1f1f1f; font-weight: 600;">✨ One-time investment • Lifetime value</p>
+                        </div>
+                        
+                        <div style="border-top: 1px solid rgba(255,255,255,0.2); padding-top: 1.5rem; position: relative; z-index: 2;">
+                            <h4 style="color: #1f2937; margin-bottom: 1rem; text-align: center; font-size: 1.25rem; font-weight: 700;">🎯 What You Get:</h4>
+                            <div style="display: grid; gap: 1rem;">
+                                <div style="display: flex; align-items: center; gap: 1rem; padding: 0.75rem; border-radius: 12px; background: rgba(255,255,255,0.05); transition: all 0.3s ease;">
+                                    <div style="width: 28px; height: 28px; background: #10b981; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);">
+                                        <i class="fas fa-check" style="color: rgb(8, 0, 0); font-size: 0.875rem;"></i>
+                                    </div>
+                                    <span style="color: #374151; font-weight: 600;">📊 Personalized Skills Assessment & Analysis</span>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 1rem; padding: 0.75rem; border-radius: 12px; background: rgba(255,255,255,0.05); transition: all 0.3s ease;">
+                                    <div style="width: 28px; height: 28px; background: #10b981; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);">
+                                        <i class="fas fa-check" style="color: #1f1f1f; font-size: 0.875rem;"></i>
+                                    </div>
+                                    <span style="color: #374151; font-weight: 600;">🗺️ Custom Career Roadmap Design</span>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 1rem; padding: 0.75rem; border-radius: 12px; background: rgba(255,255,255,0.05); transition: all 0.3s ease;">
+                                    <div style="width: 28px; height: 28px; background: #10b981; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);">
+                                        <i class="fas fa-check" style="color: #1f1f1f; font-size: 0.875rem;"></i>
+                                    </div>
+                                    <span style="color: #374151; font-weight: 600;">📚 Tailored Learning Resource Recommendations</span>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 1rem; padding: 0.75rem; border-radius: 12px; background: rgba(255,255,255,0.05); transition: all 0.3s ease;">
+                                    <div style="width: 28px; height: 28px; background: #10b981; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);">
+                                        <i class="fas fa-check" style="color: #1f1f1f; font-size: 0.875rem;"></i>
+                                    </div>
+                                    <span style="color: rgba(255,255,255,0.9); font-weight: 600;">👨‍💼 One-on-One Mentoring Session</span>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 1rem; padding: 0.75rem; border-radius: 12px; background: rgba(255,255,255,0.05); transition: all 0.3s ease;">
+                                    <div style="width: 28px; height: 28px; background: #10b981; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);">
+                                        <i class="fas fa-check" style="color: white; font-size: 0.875rem;"></i>
+                                    </div>
+                                    <span style="color: rgba(255,255,255,0.9); font-weight: 600;">🤝 Ongoing Support & Career Guidance</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Enhanced Payment Button -->
+                    <div style="position: relative; margin: 2rem 0;">
+                        <a href="/payment" class="btn-primary btn-glow" style="width: 100%; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 0.75rem; font-size: 1.2rem; padding: 1.75rem; position: relative; overflow: hidden; background: linear-gradient(135deg, #ef4444, #f97316); box-shadow: 0 8px 25px rgba(239, 68, 68, 0.4); transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);">
+                            <i class="fas fa-lock" style="margin-right: 0.5rem;"></i>
+                            <span style="font-weight: 700;">🚀 Proceed to Secure Payment</span>
+                            <i class="fas fa-arrow-right" style="margin-left: 0.5rem; transition: transform 0.3s ease;"></i>
+                        </a>
+                    </div>
+                    
+                    <!-- Trust Indicators -->
+                    <div style="text-align: center; margin-top: 1.5rem; padding: 1.5rem; background: rgba(255,255,255,0.05); border-radius: 15px; border-top: 1px solid rgba(255,255,255,0.2);">
+                        <div style="display: flex; justify-content: center; align-items: center; gap: 2rem; flex-wrap: wrap; margin-bottom: 1rem;">
+                            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                <i class="fas fa-shield-alt" style="color: #10b981; font-size: 1.2rem;"></i>
+                                <span style="color: rgba(255,255,255,0.9); font-weight: 600; font-size: 0.9rem;">SSL Secured</span>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                <i class="fas fa-undo" style="color: #10b981; font-size: 1.2rem;"></i>
+                                <span style="color: rgba(255,255,255,0.9); font-weight: 600; font-size: 0.9rem;">30-Day Guarantee</span>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                <i class="fas fa-users" style="color: #10b981; font-size: 1.2rem;"></i>
+                                <span style="color: rgba(255,255,255,0.9); font-weight: 600; font-size: 0.9rem;">500+ Success Stories</span>
+                            </div>
+                        </div>
+                        <p style="color: rgba(255,255,255,0.7); font-size: 0.85rem; font-style: italic;">
+                            🔒 Your payment is processed securely through Razorpay with bank-level encryption
+                        </p>
+                    </div>
+                </div>
+            </div>
         </div>
-        <div class="price">
-            <span class="currency">₹</span>999
-        </div>
-        <p>One Time fee</p>
-        <ul class="features">
-            <li>Personalized Skill Assessment</li>
-            <li>Career Roadmap Design</li>
-            <li>Customized Learning Solutions</li>
-            <li>Actionable Recommendations</li>
-            <li>Ongoing Support and Guidance</li>
-        </ul>
-        <a href="{{ url_for('payment') }}" class="buy-now-btn">Proceed to Payment</a>
     </div>
 </body>
 </html>

@@ -18,6 +18,11 @@ import google.generativeai as genai
 import threading
 import time
 import re
+from reportlab.lib.pagesizes import letter, A4
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.lib.colors import HexColor
 
 load_dotenv()
 
@@ -33,7 +38,7 @@ class Config:
     GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', 'AIzaSyB7JLNTFWY_Q5EFt-8J8kQDZ-UVNDpDZBY')
 
 # Initialize Flask App
-app = Flask(__name__)
+app = Flask(__name__, static_folder='static')
 app.config.from_object(Config)
 app.secret_key = os.environ.get('SECRET_KEY', 'your-secret-key-here')
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
@@ -1415,25 +1420,61 @@ def download_roadmap():
     if not data:
         return jsonify({'error': 'No roadmap data found'}), 400
     
-    # Build comprehensive roadmap content
-    roadmap_sections = []
+    filename = f"Career_Roadmap_{data.get('field', 'Tech').replace('/', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     
-    # Header
-    roadmap_sections.append(f"""
-🚀 PERSONALIZED CAREER ROADMAP
-===============================
-
-📋 OVERVIEW:
------------
-Tech Field: {data.get('field', 'N/A')}
-Current Level: {data.get('current_level', 'N/A')}
-Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-""")
+    # Create PDF document
+    doc = SimpleDocTemplate(filepath, pagesize=A4)
+    styles = getSampleStyleSheet()
+    
+    # Custom styles
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=24,
+        spaceAfter=30,
+        textColor=HexColor('#ef4444'),
+        alignment=1  # Center alignment
+    )
+    
+    heading_style = ParagraphStyle(
+        'CustomHeading',
+        parent=styles['Heading2'],
+        fontSize=16,
+        spaceAfter=12,
+        textColor=HexColor('#1f2937')
+    )
+    
+    subheading_style = ParagraphStyle(
+        'CustomSubHeading',
+        parent=styles['Heading3'],
+        fontSize=14,
+        spaceAfter=8,
+        textColor=HexColor('#ef4444')
+    )
+    
+    body_style = ParagraphStyle(
+        'CustomBody',
+        parent=styles['Normal'],
+        fontSize=11,
+        spaceAfter=6
+    )
+    
+    story = []
+    
+    # Title
+    story.append(Paragraph("🚀 PERSONALIZED CAREER ROADMAP", title_style))
+    story.append(Spacer(1, 20))
+    
+    # Overview
+    story.append(Paragraph("📋 OVERVIEW", heading_style))
+    story.append(Paragraph(f"<b>Tech Field:</b> {data.get('field', 'N/A')}", body_style))
+    story.append(Paragraph(f"<b>Current Level:</b> {data.get('current_level', 'N/A')}", body_style))
+    story.append(Paragraph(f"<b>Generated:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", body_style))
+    story.append(Spacer(1, 20))
     
     # Learning Path
-    roadmap_sections.append("\n📚 LEARNING PATH:")
-    roadmap_sections.append("-" * 50)
-    
+    story.append(Paragraph("📚 LEARNING PATH", heading_style))
     roadmap = data.get('roadmap', {})
     timeline = data.get('timeline', {})
     
@@ -1441,68 +1482,62 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
         level_items = roadmap.get(level, [])
         level_timeline = timeline.get(level, 'N/A')
         if level_items:
-            roadmap_sections.append(f"\n🎯 {level.upper()} LEVEL ({level_timeline}):")
+            story.append(Paragraph(f"🎯 {level.upper()} LEVEL ({level_timeline})", subheading_style))
             for item in level_items:
-                roadmap_sections.append(f"  • {item}")
+                story.append(Paragraph(f"• {item}", body_style))
+            story.append(Spacer(1, 10))
     
     # Learning Resources
     learning_resources = data.get('learning_resources', {})
     if learning_resources:
-        roadmap_sections.append("\n\n📖 LEARNING RESOURCES:")
-        roadmap_sections.append("-" * 50)
+        story.append(Paragraph("📖 LEARNING RESOURCES", heading_style))
         for level in ['beginner', 'intermediate', 'advanced']:
             resources = learning_resources.get(level, [])
             if resources:
-                roadmap_sections.append(f"\n{level.upper()} Resources:")
+                story.append(Paragraph(f"{level.upper()} Resources:", subheading_style))
                 for resource in resources:
-                    roadmap_sections.append(f"  • {resource}")
+                    story.append(Paragraph(f"• {resource}", body_style))
+                story.append(Spacer(1, 8))
     
     # Project Ideas
     project_ideas = data.get('project_ideas', {})
     if project_ideas:
-        roadmap_sections.append("\n\n💡 PROJECT IDEAS:")
-        roadmap_sections.append("-" * 50)
+        story.append(Paragraph("💡 PROJECT IDEAS", heading_style))
         for level in ['beginner', 'intermediate', 'advanced']:
             projects = project_ideas.get(level, [])
             if projects:
-                roadmap_sections.append(f"\n{level.upper()} Projects:")
+                story.append(Paragraph(f"{level.upper()} Projects:", subheading_style))
                 for project in projects:
-                    roadmap_sections.append(f"  • {project}")
+                    story.append(Paragraph(f"• {project}", body_style))
+                story.append(Spacer(1, 8))
     
     # Skill Validation
     skill_validation = data.get('skill_validation', {})
     if skill_validation:
-        roadmap_sections.append("\n\n✅ SKILL VALIDATION:")
-        roadmap_sections.append("-" * 50)
+        story.append(Paragraph("✅ SKILL VALIDATION", heading_style))
         for level in ['beginner', 'intermediate', 'advanced']:
             validations = skill_validation.get(level, [])
             if validations:
-                roadmap_sections.append(f"\n{level.upper()} Validation:")
+                story.append(Paragraph(f"{level.upper()} Validation:", subheading_style))
                 for validation in validations:
-                    roadmap_sections.append(f"  • {validation}")
+                    story.append(Paragraph(f"• {validation}", body_style))
+                story.append(Spacer(1, 8))
     
     # Recommended Skills
     recommended_skills = data.get('recommended_skills', [])
     if recommended_skills:
-        roadmap_sections.append("\n\n🎯 RECOMMENDED SKILLS:")
-        roadmap_sections.append("-" * 50)
+        story.append(Paragraph("🎯 RECOMMENDED SKILLS", heading_style))
         for skill in recommended_skills:
-            roadmap_sections.append(f"  • {skill}")
+            story.append(Paragraph(f"• {skill}", body_style))
     
     # Footer
-    roadmap_sections.append("\n\n" + "=" * 50)
-    roadmap_sections.append("Generated by Smarrtif AI Skills Assessment Platform")
-    roadmap_sections.append("For personalized mentoring, schedule a session with our experts!")
-    roadmap_sections.append("=" * 50)
+    story.append(Spacer(1, 30))
+    story.append(Paragraph("Generated by Smarrtif AI Skills Assessment Platform", body_style))
+    story.append(Paragraph("For personalized mentoring, schedule a session with our experts!", body_style))
     
-    roadmap_text = "\n".join(roadmap_sections)
+    # Build PDF
+    doc.build(story)
     
-    filename = f"Career_Roadmap_{data.get('field', 'Tech').replace('/', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
-    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-
-    with open(filepath, 'w', encoding='utf-8') as f:
-        f.write(roadmap_text)
-
     return send_file(filepath, as_attachment=True, download_name=filename)
 
 @app.route('/api/get_assessment_data')
