@@ -1,7 +1,7 @@
 import os
 import json
 import random
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask import Flask, request, jsonify, render_template, send_file, session, redirect, url_for
 import traceback
 from werkzeug.utils import secure_filename
@@ -10,19 +10,23 @@ import docx
 from groq import Groq
 import uuid
 import razorpay
-import hmac
-import hashlib
 from dotenv import load_dotenv
 import calendly
 import google.generativeai as genai
-import threading
-import time
 import re
-from reportlab.lib.pagesizes import letter, A4
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
+from reportlab.lib.pagesizes import A4
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.units import inch
 from reportlab.lib.colors import HexColor
+from pymongo import MongoClient
+from pymongo.server_api import ServerApi
+from werkzeug.security import generate_password_hash, check_password_hash
+from bson.objectid import ObjectId
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+
+
 
 load_dotenv()
 
@@ -31,48 +35,99 @@ class Config:
     UPLOAD_FOLDER = 'uploads'
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB
     TEST_DURATION = 1800  # 30 minutes
-    RAZORPAY_KEY_ID = os.environ.get('RAZORPAY_KEY_ID', 'YOUR_KEY_ID')
+    RAZORPAY_KEY_ID = os.environ.get('RAZORPAY_KEY_ID', 'rzp_test_6QHUKOTfZxR1DF')
     RAZORPAY_KEY_SECRET = os.environ.get('RAZORPAY_KEY_SECRET', 'YOUR_KEY_SECRET')
     CALENDLY_API_KEY = os.environ.get('CALENDLY_API_KEY', 'YOUR_CALENDLY_API_KEY')
     PAYMENT_MODE = os.environ.get('PAYMENT_MODE', 'live')
     GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', 'AIzaSyB7JLNTFWY_Q5EFt-8J8kQDZ-UVNDpDZBY')
+    MONGODB_URI = os.environ.get('MONGODB_URI', 'mongodb://localhost:27017/')
+    DB_NAME = os.environ.get('DB_NAME', 'skills_assessment')
+    SMTP_SERVER = os.environ.get('SMTP_SERVER', 'smtp.gmail.com')
+    SMTP_PORT = int(os.environ.get('SMTP_PORT', '587'))
+    EMAIL_USER = os.environ.get('EMAIL_USER', '')
+    EMAIL_PASSWORD = os.environ.get('EMAIL_PASSWORD', '')
 
 # Initialize Flask App
 app = Flask(__name__, static_folder='static')
 app.config.from_object(Config)
 app.secret_key = os.environ.get('SECRET_KEY', 'your-secret-key-here')
+
+# Session configuration
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)
+app.config['SESSION_COOKIE_SECURE'] = False  # Set to True in production with HTTPS
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
+# MongoDB storage functions
+def get_user_id():
+    if 'user_id' not in session:
+        session['user_id'] = str(uuid.uuid4())
+    return session['user_id']
+
+def get_user_data(key, default=None):
+    user_id = get_user_id()
+    if user_sessions_collection is None:
+        return session.get(key, default)
+    try:
+        doc = user_sessions_collection.find_one({'user_id': user_id})
+        return doc.get(key, default) if doc else default
+    except Exception as e:
+        print(f"[ERROR] Failed to get user data: {e}")
+        return session.get(key, default)
+
+def set_user_data(key, value):
+    user_id = get_user_id()
+    # Store in MongoDB first, then session as backup
+    if user_sessions_collection is not None:
+        try:
+            user_sessions_collection.update_one(
+                {'user_id': user_id},
+                {'$set': {key: value, 'updated_at': datetime.utcnow()}},
+                upsert=True
+            )
+        except Exception as e:
+            print(f"[ERROR] Failed to set user data in MongoDB: {e}")
+    
+    # Only store essential data in session to avoid size limit
+    if key in ['payment_verified', 'roadmap_unlocked', 'tech_field']:
+        session[key] = value
+
 # Initialize Razorpay Client
-class MockRazorpayClient:
-    def __init__(self, auth):
-        pass
-
-    class Order:
-        def create(self, data):
-            return {'id': f'order_{uuid.uuid4()}'}
-
-    order = Order()
-
-if app.config['PAYMENT_MODE'] == 'test':
-    razorpay_client = MockRazorpayClient(auth=('', ''))
-else:
+try:
     razorpay_client = razorpay.Client(
         auth=(app.config['RAZORPAY_KEY_ID'], app.config['RAZORPAY_KEY_SECRET'])
     )
+    print(f"[SUCCESS] Razorpay client initialized with key: {app.config['RAZORPAY_KEY_ID'][:10]}...")
+except Exception as e:
+    print(f"[ERROR] Failed to initialize Razorpay client: {e}")
+    razorpay_client = None
 
-# Initialize Calendly Client with error handling
-def get_calendly_client():
-    """Initialize Calendly client with error handling."""
-    api_key = app.config['CALENDLY_API_KEY']
-    if not api_key or api_key == 'YOUR_CALENDLY_API_KEY':
-        return None
-    try:
-        return calendly.Calendly(api_key)
-    except Exception:
-        return None
+# Initialize Calendly Client
+calendly_client = None
+try:
+    if app.config['CALENDLY_API_KEY'] and app.config['CALENDLY_API_KEY'] != 'YOUR_CALENDLY_API_KEY':
+        calendly_client = calendly.Calendly(app.config['CALENDLY_API_KEY'])
+except Exception:
+    pass
 
-calendly_client = get_calendly_client()
+try:
+    # Use the original working URI temporarily
+    uri = "mongodb+srv://smarrtifai_db_user:NPz75GhLTwm3dLQ8@cluster0.lzwqox9.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+    mongo_client = MongoClient(uri)
+    db = mongo_client.skills_assessment
+    users_collection = db.users
+    assessments_collection = db.assessments
+    user_sessions_collection = db.user_sessions
+    mongo_client.admin.command('ping')
+    print("[SUCCESS] MongoDB connected")
+except Exception as e:
+    print(f"[ERROR] MongoDB connection failed: {e}")
+    # Use fallback or exit gracefully
+    users_collection = None
+    assessments_collection = None
+    user_sessions_collection = None
 
 
 # Initialize Groq Client
@@ -87,11 +142,8 @@ if groq_api_key:
 else:
     print("[WARNING] GROQ_API_KEY not found in environment")
 
-# Initialize Gemini Client with timeout configuration
-genai.configure(
-    api_key=app.config['GEMINI_API_KEY'],
-    transport='rest'  # Use REST transport for better timeout handling
-)
+# Initialize Gemini Client
+genai.configure(api_key=app.config['GEMINI_API_KEY'])
 
 # Data Models for Non-Technical Skills Assessment
 NON_TECH_SKILLS_DATABASE = {
@@ -740,31 +792,6 @@ class RoadmapGenerator:
     """Generate career roadmaps."""
     
     @staticmethod
-    def _generate_with_timeout(model, prompt, generation_config, timeout=20):
-        """Generate content with timeout using threading."""
-        result = [None]
-        exception = [None]
-        
-        def target():
-            try:
-                result[0] = model.generate_content(prompt, generation_config=generation_config)
-            except Exception as e:
-                exception[0] = e
-        
-        thread = threading.Thread(target=target)
-        thread.daemon = True
-        thread.start()
-        thread.join(timeout)
-        
-        if thread.is_alive():
-            raise TimeoutError(f"Gemini API call timed out after {timeout} seconds")
-        
-        if exception[0]:
-            raise exception[0]
-            
-        return result[0]
-
-    @staticmethod
     def generate_roadmap_with_gemini(tech_field, skill_level, skills):
         """Generate roadmap with robust JSON handling."""
         try:
@@ -796,7 +823,37 @@ Respond with ONLY this JSON structure (no extra text):
                 )
             )
             
-            text = response.text.strip()
+            # Handle response properly - avoid accessing .text directly due to Part object issue
+            text = None
+            try:
+                # Try to get candidates first
+                if hasattr(response, 'candidates') and response.candidates:
+                    candidate = response.candidates[0]
+                    if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
+                        text_parts = []
+                        for part in candidate.content.parts:
+                            if hasattr(part, 'text'):
+                                text_parts.append(part.text)
+                        text = ''.join(text_parts).strip()
+                
+                # Fallback: try parts directly
+                if not text and hasattr(response, 'parts') and response.parts:
+                    text_parts = []
+                    for part in response.parts:
+                        if hasattr(part, 'text'):
+                            text_parts.append(part.text)
+                    text = ''.join(text_parts).strip()
+                    
+            except Exception as part_error:
+                print(f"[WARNING] Part access failed: {part_error}")
+                # Last resort: try direct text access with error handling
+                try:
+                    text = str(response).strip()
+                except:
+                    raise ValueError("Could not extract text from response")
+            
+            if not text:
+                raise ValueError("No text content in response")
             
             # Extract JSON more carefully
             import re
@@ -811,6 +868,7 @@ Respond with ONLY this JSON structure (no extra text):
             json_str = re.sub(r'\\(?!["\\/bfnrt])', r'\\\\', json_str)  # Fix backslashes
             
             parsed = json.loads(json_str)
+            print(f"[SUCCESS] Gemini API generated roadmap for {tech_field}")
             return parsed
             
         except Exception as e:
@@ -851,35 +909,89 @@ Respond with ONLY this JSON structure (no extra text):
 
 # Routes
 @app.route('/')
-def index():
-    """Landing page with onboarding."""
-    if 'user_id' not in session:
-        session['user_id'] = str(uuid.uuid4())
-        session['onboarding_step'] = 0
-    return render_template('index.html')
+def home():
+    """Home page."""
+    if session.get('user_authenticated'):
+        return redirect(url_for('dashboard'))
+    return redirect(url_for('login'))
 
-@app.route('/upload')
-def upload_page():
-    """Resume upload page."""
-    return render_template('upload.html')
+@app.route('/login')
+def login():
+    """Login and signup page."""
+    if session.get('user_authenticated'):
+        return redirect(url_for('dashboard'))
+    return render_template('auth.html')
+
+@app.route('/auth')
+def auth():
+    return redirect(url_for('login'))
+
+@app.route('/dashboard')
+def dashboard():
+    """User dashboard - main assessment page."""
+    if not session.get('user_authenticated'):
+        return redirect(url_for('login'))
+    
+    if 'onboarding_step' not in session:
+        session['onboarding_step'] = 0
+    
+    return render_template('index.html')
 
 @app.route('/assessment')
 def assessment_page():
     """Assessment page."""
     return render_template('assessment.html')
 
+@app.route('/take-assessment')
+def take_assessment():
+    """Assessment test page - requires authentication."""
+    if not session.get('user_authenticated'):
+        return redirect(url_for('login'))
+    
+    return render_template('assessment.html')
+
+@app.route('/upload-resume')
+def upload_resume_page():
+    """Resume upload page."""
+    return render_template('upload.html')
+
+@app.route('/upload')
+def upload_page():
+    return redirect(url_for('upload_resume_page'))
+
+@app.route('/assessment-results')
+def assessment_results():
+    """Assessment results page."""
+    if not session.get('user_authenticated'):
+        return redirect(url_for('login'))
+    
+    return render_template('results.html')
+
 @app.route('/results')
 def results_page():
-    """Results page."""
-    return render_template('results.html')
+    """Redirect /results to /assessment-results"""
+    return redirect(url_for('assessment_results'))
+
+@app.route('/career-roadmap')
+def career_roadmap():
+    """Career roadmap page."""
+    print(f"[DEBUG] Roadmap access - Unlocked: {get_user_data('roadmap_unlocked')}, Payment: {get_user_data('payment_verified')}")
+    
+    if not get_user_data('roadmap_unlocked') or not get_user_data('payment_verified'):
+        print(f"[WARNING] Roadmap access denied - redirecting to bill")
+        return redirect(url_for('bill_page'))
+    
+    roadmap_data = get_user_data('roadmap_data')
+    if not roadmap_data:
+        print(f"[ERROR] No roadmap data found")
+        return redirect(url_for('bill_page'))
+    
+    calendly_url = get_user_data('calendly_scheduling_url', "https://calendly.com/diekshapriyaamishra-smarrtifai/smarrtif-ai-services-discussion")
+    return render_template('roadmap.html', calendly_url=calendly_url)
 
 @app.route('/roadmap')
 def roadmap_page():
-    """Roadmap page."""
-    if not session.get('roadmap_unlocked'):
-        return redirect(url_for('payment'))
-    calendly_url = session.get('calendly_scheduling_url')
-    return render_template('roadmap.html', calendly_url=calendly_url)
+    return redirect(url_for('career_roadmap'))
 
 @app.route('/schedule')
 def schedule_page():
@@ -889,93 +1001,82 @@ def schedule_page():
 @app.route('/post-payment')
 def post_payment_page():
     """Page shown after successful payment."""
-    if not session.get('roadmap_unlocked'):
-        return redirect(url_for('payment'))
-    calendly_url = session.get('calendly_scheduling_url')
+    if not get_user_data('roadmap_unlocked'):
+        return redirect(url_for('payment_page'))
+    calendly_url = get_user_data('calendly_scheduling_url', "https://calendly.com/diekshapriyaamishra-smarrtifai/smarrtif-ai-services-discussion")
     return render_template('post_payment.html', calendly_url=calendly_url)
 
 
-# ----- Flowchart alignment helpers (non-breaking stubs) ----- 
-@app.route('/api/send_assessment_link', methods=['POST'])
-def send_assessment_link():
-    """Simulate sending assessment link to user's email as per flowchart.
-    No external email is sent; we just acknowledge and provide a link token.
-    """
-    # In a real system, you would integrate an email service like SendGrid or Mailgun here.
-    # For this simulation, we'll just confirm the action.
-    session['assessment_link_sent'] = True
-    return jsonify({
-        'success': True,
-        'message': 'An assessment link has been sent to your email (simulated).',
-        # In a real app, you'd redirect to a "check your email" page.
-        # For this flow, we'll just proceed.
-        'redirect': url_for('upload_page')
-    })
 
-@app.route('/Assets/<filename>')
-def assets(filename):
-    """Serve assets files."""
-    return send_file(os.path.join('Assets', filename))
+
+
 
 @app.route('/api/onboarding', methods=['POST'])
 def handle_onboarding():
     """Handle conversational onboarding flow."""
-    data = request.json
-    step = data.get('step', 0)
-    response = data.get('response', '')
-    
-    # This is the step *after* the user has answered.
-    # The question for interests is at step 1 (0-indexed).
-    # The JS sends step+1, so when it sends step=2, it's the response for question 1.
-    if step == 2:
-        session['user_interests'] = [interest.strip() for interest in response.split(',')]
-
-    onboarding_responses = {
-        0: {
-            'question': 'Hi! 👋 I\'m here to help you start your tech journey. What\'s your current situation?',
-            'options': ["I'm new to tech", "I have some basic knowledge about tech", "I'm looking to switch career"],
-            'type': 'single'
-        },
-        1: {
-            'question': 'Great! What interests you most about technology? You can select multiple.',
-            'options': [
-                'Frontend Development', 'Backend Development', 'Full-Stack Development',
-                'Machine Learning', 'Deep Learning', 'NLP',
-                'Ethical Hacking', 'Network Security', 'Cloud Security',
-                'LLM Development', 'Prompt Engineering', 'RAG Systems',
-                'Data Visualization', 'Business Intelligence', 'Data Engineering',
-                'Autonomous Agents', 'Multi-Agent Systems', 'DevOps', 'Cloud Computing'
-            ],
-            'type': 'multi'
-        },
-        2: {
-            'question': 'Perfect! Do you have a resume or would you like to start with a quick skill assessment?',
-            'options': ['I have a resume to upload', 'Let me take a quick assessment first', 'Tell me more about career paths'],
-            'type': 'single'
-        }
-    }
-    
-    session['onboarding_step'] = step + 1
-    
-    if step < len(onboarding_responses):
-        return jsonify(onboarding_responses[step])
-    else:
-        # Handle final choice and redirect
-        if step == 3:
-            choice = data.get('response', '')
-            if 'resume' in choice.lower():
-                return jsonify({'complete': True, 'redirect': '/upload'})
-            elif 'assessment' in choice.lower():
-                return jsonify({'complete': True, 'redirect': '/assessment'})
-            else:
-                return jsonify({'complete': True, 'redirect': '/upload'})
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+            
+        step = data.get('step', 0)
+        response = data.get('response', '')
         
-        return jsonify({'complete': True, 'message': 'Let\'s get started with your personalized journey!'})
+        # Store interests when provided
+        if step == 2 and response:
+            interests = [interest.strip() for interest in response.split(',') if interest.strip()]
+            set_user_data('user_interests', interests)
+
+        onboarding_responses = {
+            0: {
+                'question': 'Hi! 👋 I\'m here to help you start your tech journey. What\'s your current situation?',
+                'options': ["I'm new to tech", "I have some basic knowledge about tech", "I'm looking to switch career"],
+                'type': 'single'
+            },
+            1: {
+                'question': 'Great! What interests you most about technology? You can select multiple.',
+                'options': [
+                    'Frontend Development', 'Backend Development', 'Full-Stack Development',
+                    'Machine Learning', 'Deep Learning', 'NLP',
+                    'Ethical Hacking', 'Network Security', 'Cloud Security',
+                    'LLM Development', 'Prompt Engineering', 'RAG Systems',
+                    'Data Visualization', 'Business Intelligence', 'Data Engineering',
+                    'Autonomous Agents', 'Multi-Agent Systems', 'DevOps', 'Cloud Computing'
+                ],
+                'type': 'multi'
+            },
+            2: {
+                'question': 'Perfect! Do you have a resume or would you like to start with a quick skill assessment?',
+                'options': ['I have a resume to upload', 'Let me take a quick assessment first', 'Tell me more about career paths'],
+                'type': 'single'
+            }
+        }
+        
+        session['onboarding_step'] = step + 1
+        
+        if step < len(onboarding_responses):
+            return jsonify(onboarding_responses[step])
+        else:
+            # Handle final choice and redirect
+            if step == 3:
+                choice = data.get('response', '')
+                if 'resume' in choice.lower():
+                    return jsonify({'complete': True, 'redirect': '/upload-resume'})
+                elif 'assessment' in choice.lower():
+                    return jsonify({'complete': True, 'redirect': '/take-assessment'})
+                else:
+                    return jsonify({'complete': True, 'redirect': '/upload-resume'})
+            
+            return jsonify({'complete': True, 'message': 'Let\'s get started with your personalized journey!'})
+            
+    except Exception as e:
+        print(f"[ERROR] Onboarding error: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
 
 @app.route('/api/assessment/interest-based', methods=['POST'])
 def start_interest_based_assessment():
     """Generate an assessment based on user interests from the session."""
-    interests = session.get('user_interests', [])
+    interests = get_user_data('user_interests', [])
     if not interests:
         return jsonify({'error': 'No interests selected. Please complete the onboarding questions first.'}), 400
 
@@ -1046,11 +1147,11 @@ You are a career transition specialist evaluating NON-TECHNICAL professionals in
 
             if isinstance(questions, list) and len(questions) >= 10 and all('question' in q and 'options' in q and 'correct' in q for q in questions):
                 print(f"[SUCCESS] Generated {len(questions)} questions from Groq for interests.")
-                session['assessment_data'] = {
-                    'skills': interests, 'projects': [], 'achievements': [], 'internships': [],
+                set_user_data('assessment_data', {
+                    'skills': interests,
                     'questions': questions[:num_questions], 'test_duration': 1800
-                }
-                return jsonify({'redirect': '/assessment'})
+                })
+                return jsonify({'redirect': '/take-assessment'})
             else:
                 print(f"[ERROR] Invalid Groq response. Got {len(questions) if isinstance(questions, list) else 0} questions.")
         except Exception as e:
@@ -1091,11 +1192,10 @@ You are a career transition specialist evaluating NON-TECHNICAL professionals in
     # Repeat questions to reach desired count
     questions = (non_tech_questions * (num_questions // len(non_tech_questions) + 1))[:num_questions]
 
-    session['assessment_data'] = {
-        'skills': ['Communication', 'Problem Solving', 'Leadership', 'Teamwork'], 
-        'projects': [], 'achievements': [], 'internships': [],
+    set_user_data('assessment_data', {
+        'skills': ['Communication', 'Problem Solving', 'Leadership'], 
         'questions': questions, 'test_duration': 1800
-    }
+    })
     return jsonify({'redirect': '/assessment'})
 
 @app.route('/api/mentor', methods=['POST'])
@@ -1107,9 +1207,9 @@ def ai_mentor():
     data = request.json
     question = data.get('question', '')
 
-    # Get context from session
-    results = session.get('assessment_results', {})
-    tech_field = session.get('tech_field', 'Not selected yet')
+    # Get context from MongoDB
+    results = get_user_data('assessment_results', {})
+    tech_field = get_user_data('tech_field', 'Not selected yet')
 
     skills_str = ", ".join(results.get('skills', []))
     level = results.get('level', 'Unknown')
@@ -1153,19 +1253,24 @@ Keep the response to 2-4 sentences.
 def upload_resume():
     """Handle resume upload and analysis."""
     try:
+        print(f"[INFO] Upload request received")
         if 'resume' not in request.files:
+            print(f"[ERROR] No resume file in request")
             return jsonify({'error': 'No file uploaded'}), 400
         
         file = request.files['resume']
         if file.filename == '':
+            print(f"[ERROR] Empty filename")
             return jsonify({'error': 'No file selected'}), 400
+        
+        print(f"[INFO] Processing file: {file.filename}")
         
         # Validate file size
         if request.content_length and request.content_length > app.config['MAX_CONTENT_LENGTH']:
             return jsonify({'error': 'File too large. Maximum size is 16MB.'}), 413
         
         filename = secure_filename(file.filename)
-        if not filename:
+        if not filename or '..' in filename:
             return jsonify({'error': 'Invalid filename'}), 400
             
         # Validate file extension
@@ -1174,7 +1279,9 @@ def upload_resume():
         if file_ext not in allowed_extensions:
             return jsonify({'error': 'Unsupported file format. Please upload PDF or DOCX files.'}), 400
         
-        file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        # Generate safe filename with timestamp
+        safe_filename = f"{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{filename}"
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], safe_filename)
         file.save(file_path)
         
         # Extract text based on file type
@@ -1184,42 +1291,35 @@ def upload_resume():
         elif file_ext == '.docx':
             text = FileProcessor.extract_text_from_docx(file_path)
         
-        if not text or len(text.strip()) < 50:
-            os.remove(file_path)  # Clean up
-            return jsonify({'error': 'Could not extract text from file or file is too short. Please ensure the file contains readable text.'}), 400
+        print(f"[INFO] Extracted text length: {len(text) if text else 0}")
+        if not text or len(text.strip()) < 20:  # Reduced minimum length
+            print(f"[WARNING] Text too short, using fallback")
+            text = "General professional with communication and problem-solving skills."
         
         # AI Processing: Extract skills, education, domain expertise
         extracted_data = SkillExtractor.extract_skills_from_text(text)
         
+        # If no skills found, use fallback skills
         if not extracted_data['skills']:
-            os.remove(file_path)  # Clean up
-            return jsonify({'error': 'No technical skills found in resume. Please upload a technical resume with relevant skills.'}), 400
+            extracted_data['skills'] = ['Communication', 'Problem Solving', 'Leadership', 'Teamwork']
         
         # AI Processing: Generate 30 tailored MCQs
         questions = QuestionGenerator.generate_questions_with_groq(extracted_data, 30)
         
+        # Always ensure we have questions (use fallback if needed)
         if not questions or len(questions) < 10:
-            os.remove(file_path)  # Clean up
-            return jsonify({'error': 'Could not generate enough questions from resume. Please try with a more detailed technical resume.'}), 400
+            questions = QuestionGenerator.generate_fallback_questions(extracted_data, 30)
         
-        # Store in session for assessment page
-        session_id = datetime.now().strftime('%Y%m%d_%H%M%S')
-        questions_filename = f"{session_id}_questions.json"
-        questions_filepath = os.path.join(app.config['UPLOAD_FOLDER'], questions_filename)
-        with open(questions_filepath, 'w') as f:
-            json.dump(questions, f)
-
-        session['assessment_data'] = {
+        # Store assessment data in MongoDB
+        set_user_data('assessment_data', {
             'skills': extracted_data['skills'],
-            'projects': extracted_data['projects'], 
-            'achievements': extracted_data['achievements'],
-            'internships': extracted_data.get('internships', []),
-            'education': extracted_data.get('education', []),
-            'domain_expertise': extracted_data.get('domain', []),
-            'questions_file': questions_filename,
-            'session_id': session_id,
+            'questions': questions,
             'test_duration': 1800
-        }
+        })
+        
+        print(f"[SUCCESS] Assessment data stored in session for user: {session.get('user_email')}")
+        print(f"[INFO] Skills found: {extracted_data['skills']}")
+        print(f"[INFO] Questions generated: {len(questions)}")
         
         # Clean up uploaded file
         try:
@@ -1227,12 +1327,13 @@ def upload_resume():
         except:
             pass
         
-        return jsonify({'redirect': '/assessment'})
+        print(f"[INFO] Redirecting to /take-assessment")
+        return jsonify({'redirect': '/take-assessment'})
     
     except Exception as e:
-        print(f"Upload error: {str(e)}")  # Log error
+        print(f"[ERROR] Upload error: {str(e)}")
         traceback.print_exc()
-        return jsonify({'error': 'Processing failed. Please try again with a different file.'}), 500
+        return jsonify({'error': f'Processing failed: {str(e)}'}), 500
 
 @app.route('/api/assess', methods=['POST'])
 def assess_skills():
@@ -1252,7 +1353,7 @@ def assess_skills():
     level = AssessmentEvaluator.assess_with_groq(skills, score, total, percentage)
     strengths, weaknesses, skill_gaps = AssessmentEvaluator.analyze_performance(answers, questions, skills)
     
-    session['assessment_results'] = {
+    assessment_results = {
         'score': score,
         'total': total,
         'percentage': percentage,
@@ -1264,7 +1365,13 @@ def assess_skills():
         'tech_fields': list(TECH_FIELDS.keys())
     }
     
-    return jsonify({'redirect': '/results'})
+    # Store in session AND MongoDB user_sessions
+    session['assessment_results'] = assessment_results
+    set_user_data('assessment_results', assessment_results)
+    
+    print(f"[INFO] Assessment results stored: {assessment_results}")
+    
+    return jsonify({'redirect': '/assessment-results'})
 
 @app.route('/api/roadmap', methods=['POST'])
 def request_roadmap():
@@ -1275,7 +1382,7 @@ def request_roadmap():
     if not tech_field:
         return jsonify({'error': 'No tech field selected'}), 400
         
-    session['tech_field'] = tech_field
+    set_user_data('tech_field', tech_field)
     return jsonify({'redirect': '/bill'})
 
 @app.route('/bill')
@@ -1284,9 +1391,13 @@ def bill_page():
     invoice_id = f"INV-{uuid.uuid4().hex[:8].upper()}"
     return render_template('bill.html', invoice_id=invoice_id)
 
-@app.route('/payment', methods=['GET'])
-def payment():
+@app.route('/payment')
+def payment_page():
     """Create a Razorpay order and render the payment page."""
+    if razorpay_client is None:
+        print("[ERROR] Razorpay client not initialized")
+        return redirect(url_for('payment_failure_page'))
+        
     amount = 99900  # Amount in paise (499 INR)
     order_data = {
         'amount': amount,
@@ -1307,41 +1418,60 @@ def payment():
         )
     except Exception as e:
         print(f"Error creating order: {str(e)}")
-        return redirect(url_for('payment_failure'))
+        return redirect(url_for('payment_failure_page'))
+
+def send_invoice_email(user_email, user_name, payment_id, amount):
+    """Send invoice email after successful payment."""
+    try:
+        if not app.config['EMAIL_USER'] or not app.config['EMAIL_PASSWORD']:
+            print("[WARNING] Email credentials not configured")
+            return False
+            
+        # Create message
+        msg = MIMEMultipart()
+        msg['From'] = app.config['EMAIL_USER']
+        msg['To'] = user_email
+        msg['Subject'] = f"Payment Invoice - Smarrtif AI Skills Assessment Platform"
+        
+        # Email body
+        body = f"""
+        Dear {user_name},
+        
+        Thank you for your payment! Here are your transaction details:
+        
+        Payment ID: {payment_id}
+        Amount: ₹{amount/100:.2f}
+        Service: Career Consultation & Roadmap Service
+        Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+        
+        Your personalized career roadmap is now available in your account.
+        
+        Best regards,
+        Smarrtif AI Team
+        """
+        
+        msg.attach(MIMEText(body, 'plain'))
+        
+        # Send email
+        server = smtplib.SMTP(app.config['SMTP_SERVER'], app.config['SMTP_PORT'])
+        server.starttls()
+        server.login(app.config['EMAIL_USER'], app.config['EMAIL_PASSWORD'])
+        text = msg.as_string()
+        server.sendmail(app.config['EMAIL_USER'], user_email, text)
+        server.quit()
+        
+        print(f"[SUCCESS] Invoice email sent to: {user_email}")
+        return True
+        
+    except Exception as e:
+        print(f"[ERROR] Failed to send invoice email: {e}")
+        return False
 
 def generate_and_store_calendly_link():
     """Generate Calendly link with fallback to default URL."""
     default_url = "https://calendly.com/diekshapriyaamishra-smarrtifai/smarrtif-ai-services-discussion"
-    
-    try:
-        if not calendly_client:
-            print("[WARNING] Calendly client not available. Using default URL.")
-            session['calendly_scheduling_url'] = default_url
-            return True
-            
-        user_info = calendly_client.about()
-        user_uri = user_info['resource']['uri']
-        event_types = calendly_client.get_event_types(user=user_uri)
-        
-        if not event_types:
-            print("[WARNING] No event types found. Using default URL.")
-            session['calendly_scheduling_url'] = default_url
-            return True
-
-        event_type_uri = event_types[0]['uri']
-        payload = {
-            "max_event_count": 1,
-            "owner": event_type_uri,
-            "owner_type": "EventType"
-        }
-        scheduling_link = calendly_client.create_scheduling_link(payload=payload)
-        session['calendly_scheduling_url'] = scheduling_link['booking_url']
-        return True
-        
-    except Exception as e:
-        print(f"⚠️ Calendly API error: {e}. Using default URL.")
-        session['calendly_scheduling_url'] = default_url
-        return True
+    session['calendly_scheduling_url'] = default_url
+    return True
 
 @app.route('/charge', methods=['POST'])
 def charge():
@@ -1357,39 +1487,50 @@ def charge():
     }
 
     try:
+        # Verify payment signature
         razorpay_client.utility.verify_payment_signature(params_dict)
         print(f"[SUCCESS] Payment verified successfully. Payment ID: {payment_id}")
         
-        tech_field = session.get('tech_field')
-        results = session.get('assessment_results', {})
+        # Double check payment status with Razorpay
+        payment_details = razorpay_client.payment.fetch(payment_id)
+        if payment_details['status'] != 'captured':
+            print(f"[ERROR] Payment not captured. Status: {payment_details['status']}")
+            return redirect(url_for('payment_failure_page'))
+        
+        # Set payment success flag first
+        set_user_data('payment_verified', True)
+        set_user_data('payment_id', payment_id)
+        
+        tech_field = get_user_data('tech_field')
+        results = get_user_data('assessment_results', {})
         skill_level = results.get('level', 'Beginner')
         skills = results.get('skills', [])
         
-        if not tech_field or not results:
-            print(f"[ERROR] Missing session data - tech_field: {tech_field}, results: {bool(results)}")
-            return redirect(url_for('index'))
-
         print(f"[INFO] Generating roadmap for {tech_field} at {skill_level} level")
-        # Generate roadmap with Gemini
-        roadmap = RoadmapGenerator.generate_roadmap_with_gemini(tech_field, skill_level, skills)
-        session['roadmap_data'] = roadmap
-        session['roadmap_unlocked'] = True
+        # Always generate roadmap regardless of API success
+        try:
+            roadmap = RoadmapGenerator.generate_roadmap_with_gemini(tech_field, skill_level, skills)
+        except Exception as e:
+            print(f"[WARNING] Roadmap generation failed, using fallback: {e}")
+            roadmap = RoadmapGenerator.get_fallback_roadmap(tech_field, skill_level)
         
-        # Generate Calendly link
-        generate_and_store_calendly_link()
+        # Store roadmap and unlock status
+        set_user_data('roadmap_data', roadmap)
+        set_user_data('roadmap_unlocked', True)
+        set_user_data('calendly_scheduling_url', "https://calendly.com/diekshapriyaamishra-smarrtifai/smarrtif-ai-services-discussion")
         
-        print(f"[SUCCESS] Payment processing complete. Redirecting to roadmap page.")
-        return redirect(url_for('roadmap_page'))
+        print(f"[SUCCESS] Payment processing complete. Roadmap unlocked.")
+        return redirect(url_for('career_roadmap'))
         
     except razorpay.errors.SignatureVerificationError as e:
         print(f"[ERROR] Payment verification failed: {e}")
-        return redirect(url_for('payment_failure'))
+        return redirect(url_for('payment_failure_page'))
     except Exception as e:
         print(f"[ERROR] Unexpected error in payment processing: {e}")
-        return redirect(url_for('payment_failure'))
+        return redirect(url_for('payment_failure_page'))
 
-@app.route('/failure')
-def payment_failure():
+@app.route('/payment-failed')
+def payment_failure_page():
     """Payment failure page"""
     return render_template('failure.html')
 
@@ -1400,29 +1541,14 @@ def payment_success():
     return redirect(url_for('roadmap_page'))
 
 
-@app.route('/api/send_full_roadmap_email', methods=['POST'])
-def send_full_roadmap_email():
-    """Simulate emailing the full roadmap to the user after payment."""
-    if not session.get('roadmap_unlocked'):
-        return jsonify({'error': 'Roadmap not unlocked yet'}), 400
-    # Create a text export similar to download and pretend to email
-    data = session.get('roadmap_data', {})
-    filename = f"roadmap_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
-    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-    content = f"Full roadmap for {data.get('field','N/A')} generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-    try:
-        with open(filepath, 'w') as f:
-            f.write(content)
-    except Exception:
-        pass
-    return jsonify({'success': True, 'message': 'Full roadmap emailed (simulated).', 'attachment': filename})
+
 
 @app.route('/api/download_roadmap', methods=['GET', 'POST'])
 def download_roadmap():
-    if not session.get('roadmap_unlocked'):
+    if not get_user_data('roadmap_unlocked'):
         return jsonify({'error': 'Roadmap not unlocked. Please complete the payment first.'}), 403
     
-    data = session.get('roadmap_data', {})
+    data = get_user_data('roadmap_data', {})
     if not data:
         return jsonify({'error': 'No roadmap data found'}), 400
     
@@ -1549,30 +1675,41 @@ def download_roadmap():
 @app.route('/api/get_assessment_data')
 def get_assessment_data():
     """Get assessment data for current session."""
-    assessment_data = session.get('assessment_data', {})
-    if 'questions_file' in assessment_data:
-        questions_filepath = os.path.join(app.config['UPLOAD_FOLDER'], assessment_data['questions_file'])
-        try:
-            with open(questions_filepath, 'r') as f:
-                assessment_data['questions'] = json.load(f)
-        except FileNotFoundError:
-            return jsonify({'error': 'Assessment data not found. Please start over.'}), 404
-        except json.JSONDecodeError:
-            return jsonify({'error': 'Failed to load assessment data. Please start over.'}), 500
+    assessment_data = get_user_data('assessment_data', {})
+    
+    # If no assessment data, create fallback
+    if not assessment_data:
+        print(f"[WARNING] No assessment data found, creating fallback")
+        fallback_questions = QuestionGenerator.generate_fallback_questions({}, 30)
+        assessment_data = {
+            'skills': ['Communication', 'Problem Solving', 'Leadership'],
+            'projects': [],
+            'achievements': [],
+            'internships': [],
+            'questions': fallback_questions,
+            'test_duration': 1800
+        }
+        set_user_data('assessment_data', assessment_data)
+    
+    print(f"[INFO] Returning assessment data with {len(assessment_data.get('questions', []))} questions")
     return jsonify(assessment_data)
 
 @app.route('/api/get_results_data')
 def get_results_data():
     """Get results data for current session."""
-    return jsonify(session.get('assessment_results', {}))
+    # Try session first, then MongoDB
+    results = session.get('assessment_results', {})
+    if not results:
+        results = get_user_data('assessment_results', {})
+    return jsonify(results)
 
 @app.route('/api/get_roadmap_data')
 def get_roadmap_data():
     """Get roadmap data for current session."""
-    data = session.get('roadmap_data', {})
+    data = get_user_data('roadmap_data', {})
     # Add unlocked flag to align with flowchart after payment confirmation
     wrapped = dict(data)
-    is_unlocked = bool(session.get('roadmap_unlocked'))
+    is_unlocked = bool(get_user_data('roadmap_unlocked'))
     wrapped['unlocked'] = is_unlocked
 
     # If not unlocked, only return the beginner module
@@ -1595,51 +1732,144 @@ def get_roadmap_data():
 @app.route('/api/clear_session', methods=['POST'])
 def clear_session():
     """Clear session data for new assessment."""
+    user_id = get_user_id()
+    try:
+        user_sessions_collection.delete_one({'user_id': user_id})
+    except:
+        pass
     session.clear()
     return jsonify({'success': True})
+
+@app.route('/api/debug_session')
+def debug_session():
+    """Debug route to check session data - REMOVE IN PRODUCTION."""
+    # Only allow in development
+    if os.environ.get('FLASK_ENV') != 'development':
+        return jsonify({'error': 'Not available in production'}), 403
+        
+    user_id = get_user_id()
+    # Don't expose sensitive session data
+    safe_session = {
+        'user_authenticated': session.get('user_authenticated'),
+        'user_email': session.get('user_email'),
+        'has_assessment_results': bool(session.get('assessment_results'))
+    }
+    
+    return jsonify({
+        'session': safe_session,
+        'user_id': user_id
+    })
+
+
+
+@app.route('/api/auth/login', methods=['POST'])
+def api_login():
+    """Handle login API request."""
+    data = request.json
+    email = data.get('email', '').lower().strip()
+    password = data.get('password', '')
+    
+    if not email or not password:
+        return jsonify({'success': False, 'message': 'Email and password required'}), 400
+    
+    try:
+        if users_collection is None:
+            return jsonify({'success': False, 'message': 'Database unavailable'}), 503
+            
+        print(f"[INFO] Attempting MongoDB login for: {email}")
+        user = users_collection.find_one({'email': email})
+        
+        if user and check_password_hash(user['password'], password):
+            session.clear()
+            session['user_authenticated'] = True
+            session['user_email'] = email
+            session['user_name'] = user['name']
+            session['user_id'] = str(user['_id'])
+            session.permanent = True
+            print(f"[SUCCESS] MongoDB login successful for: {email}")
+            return jsonify({'success': True, 'message': 'Login successful'})
+        else:
+            return jsonify({'success': False, 'message': 'Invalid email or password'}), 401
+            
+    except Exception as e:
+        print(f"[ERROR] Login error: {e}")
+        return jsonify({'success': False, 'message': 'Login failed. Please try again.'}), 500
+
+@app.route('/api/auth/signup', methods=['POST'])
+def api_signup():
+    """Handle signup API request."""
+    try:
+        data = request.json
+        if not data:
+            return jsonify({'success': False, 'message': 'No data provided'}), 400
+            
+        name = data.get('name', '').strip()
+        email = data.get('email', '').lower().strip()
+        mobile = data.get('mobile', '').strip()
+        password = data.get('password', '')
+        
+        if not name or not email or not mobile or not password:
+            return jsonify({'success': False, 'message': 'All fields are required'}), 400
+            
+        if len(mobile) != 10 or not mobile.isdigit():
+            return jsonify({'success': False, 'message': 'Please enter a valid 10-digit mobile number'}), 400
+            
+        if len(password) < 6:
+            return jsonify({'success': False, 'message': 'Password must be at least 6 characters'}), 400
+        
+        if users_collection is None:
+            return jsonify({'success': False, 'message': 'Database unavailable'}), 503
+            
+        print(f"[INFO] Attempting MongoDB signup for: {email}")
+        if users_collection.find_one({'email': email}):
+            return jsonify({'success': False, 'message': 'Email already registered'}), 409
+        
+        user_data = {
+            'name': name,
+            'email': email,
+            'mobile': mobile,
+            'password': generate_password_hash(password),
+            'created_at': datetime.utcnow(),
+            'last_login': None
+        }
+        
+        result = users_collection.insert_one(user_data)
+        user_id = str(result.inserted_id)
+        print(f"[SUCCESS] User saved to MongoDB: {email} with ID: {user_id}")
+        
+        session.clear()
+        session['user_authenticated'] = True
+        session['user_email'] = email
+        session['user_name'] = name
+        session['user_id'] = user_id
+        session.permanent = True
+        
+        return jsonify({'success': True, 'message': 'Account created successfully'})
+        
+    except Exception as e:
+        print(f"[ERROR] Signup error: {e}")
+        return jsonify({'success': False, 'message': 'Account creation failed. Please try again.'}), 500
+
+@app.route('/api/auth/logout', methods=['POST'])
+def api_logout():
+    """Handle logout API request."""
+    session.pop('user_authenticated', None)
+    session.pop('user_email', None)
+    session.pop('user_name', None)
+    return jsonify({'success': True, 'message': 'Logged out successfully'})
+
+@app.route('/Assets/<filename>')
+def assets(filename):
+    """Serve assets files."""
+    return send_file(os.path.join('Assets', filename))
 
 @app.route('/schedule_meeting', methods=['POST'])
 def schedule_meeting():
     """Schedule a meeting with a mentor."""
     default_url = "https://calendly.com/diekshapriyaamishra-smarrtifai/smarrtif-ai-services-discussion"
-    
-    try:
-        if not calendly_client:
-            return jsonify({'scheduling_url': default_url})
-            
-        user_info = calendly_client.about()
-        user_uri = user_info['resource']['uri']
-        event_types = calendly_client.get_event_types(user=user_uri)
-        
-        if not event_types:
-            return jsonify({'scheduling_url': default_url})
-
-        event_type_uri = event_types[0]['uri']
-        payload = {
-            "max_event_count": 1,
-            "owner": event_type_uri,
-            "owner_type": "EventType"
-        }
-        scheduling_link = calendly_client.create_scheduling_link(payload=payload)
-        return jsonify({'scheduling_url': scheduling_link['booking_url']})
-        
-    except Exception as e:
-        print(f"⚠️ Calendly API error: {e}. Using default URL.")
-        return jsonify({'scheduling_url': default_url})
-
-@app.route('/schedule_meeting_page')
-def schedule_meeting_page():
-    """Render the Calendly scheduling page."""
-    calendly_url = session.get('calendly_scheduling_url', "https://calendly.com/diekshapriyaamishra-smarrtifai/smarrtif-ai-services-discussion")
-    return render_template('calendly_schedule.html', calendly_url=calendly_url)
+    return jsonify({'scheduling_url': default_url})
 
 
-@app.route('/calendly_webhook', methods=['POST'])
-def calendly_webhook():
-    """Handle Calendly webhooks."""
-    data = request.json
-    print(f"Received Calendly webhook: {data}")
-    return jsonify({'status': 'success'}), 200
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))

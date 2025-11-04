@@ -391,6 +391,7 @@
             isTestStarted = false;
 
             try {
+                console.log('Submitting assessment...');
                 const response = await fetch('/api/assess', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -401,11 +402,19 @@
                     })
                 });
                 
+                console.log('Assessment response status:', response.status);
                 const data = await response.json();
+                console.log('Assessment response data:', data);
                 
                 if (data.redirect) {
+                    console.log('Redirecting to:', data.redirect);
                     window.location.href = data.redirect;
+                } else if (response.ok) {
+                    // Fallback redirect if no redirect URL provided
+                    console.log('No redirect URL, using fallback');
+                    window.location.href = '/assessment-results';
                 } else {
+                    console.error('Assessment submission failed:', data);
                     alert('Error submitting assessment. Please try again.');
                 }
             } catch (error) {

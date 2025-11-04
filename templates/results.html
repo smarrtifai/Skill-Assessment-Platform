@@ -73,18 +73,22 @@
         // Load results data on page load
         window.addEventListener('load', async () => {
             try {
+                console.log('Loading results data...');
                 const response = await fetch('/api/get_results_data');
                 resultsData = await response.json();
                 
+                console.log('Results data received:', resultsData);
+                
                 if (!resultsData.level) {
-                    window.location.href = '/';
+                    console.log('No level found in results data, redirecting to dashboard');
+                    window.location.href = '/dashboard';
                     return;
                 }
 
                 displayResults();
             } catch (error) {
                 console.error('Failed to load results data:', error);
-                window.location.href = '/';
+                window.location.href = '/dashboard';
             }
         });
 
