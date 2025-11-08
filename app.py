@@ -25,6 +25,8 @@ from bson.objectid import ObjectId
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+import random
+import string
 
 
 
@@ -46,6 +48,9 @@ class Config:
     SMTP_PORT = int(os.environ.get('SMTP_PORT', '587'))
     EMAIL_USER = os.environ.get('EMAIL_USER', '')
     EMAIL_PASSWORD = os.environ.get('EMAIL_PASSWORD', '')
+    TWILIO_ACCOUNT_SID = os.environ.get('TWILIO_ACCOUNT_SID', '')
+    TWILIO_AUTH_TOKEN = os.environ.get('TWILIO_AUTH_TOKEN', '')
+    TWILIO_PHONE_NUMBER = os.environ.get('TWILIO_PHONE_NUMBER', '')
 
 # Initialize Flask App
 app = Flask(__name__, static_folder='static')
@@ -59,6 +64,65 @@ app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
+# OTP Verification Functions
+def generate_otp():
+    """Generate 6-digit OTP."""
+    return ''.join(random.choices(string.digits, k=6))
+
+def send_email_otp(email, otp):
+    """Send OTP via email."""
+    try:
+        if not app.config['EMAIL_USER'] or not app.config['EMAIL_PASSWORD']:
+            return False
+            
+        msg = MIMEMultipart()
+        msg['From'] = app.config['EMAIL_USER']
+        msg['To'] = email
+        msg['Subject'] = "Email Verification - Smarrtif AI"
+        
+        body = f"Your verification code is: {otp}\n\nThis code will expire in 10 minutes."
+        msg.attach(MIMEText(body, 'plain'))
+        
+        server = smtplib.SMTP(app.config['SMTP_SERVER'], app.config['SMTP_PORT'])
+        server.starttls()
+        server.login(app.config['EMAIL_USER'], app.config['EMAIL_PASSWORD'])
+        server.sendmail(app.config['EMAIL_USER'], email, msg.as_string())
+        server.quit()
+        return True
+    except Exception as e:
+        print(f"[ERROR] Email OTP failed: {e}")
+        return False
+
+def send_sms_otp(phone, otp):
+    """Send OTP via SMS using Twilio."""
+    try:
+        # Option 1: Twilio (Recommended)
+        from twilio.rest import Client
+        
+        account_sid = app.config.get('TWILIO_ACCOUNT_SID')
+        auth_token = app.config.get('TWILIO_AUTH_TOKEN')
+        from_number = app.config.get('TWILIO_PHONE_NUMBER')
+        
+        if not all([account_sid, auth_token, from_number]):
+            print("[ERROR] Twilio credentials not configured")
+            return False
+            
+        client = Client(account_sid, auth_token)
+        message = client.messages.create(
+            body=f"Your Smarrtif AI verification code is: {otp}. Valid for 10 minutes.",
+            from_=from_number,
+            to=f"+91{phone}"  # Assuming Indian numbers
+        )
+        print(f"[SUCCESS] SMS sent via Twilio: {message.sid}")
+        return True
+        
+    except ImportError:
+        print("[ERROR] Twilio not installed. Install with: pip install twilio")
+        return False
+    except Exception as e:
+        print(f"[ERROR] SMS sending failed: {e}")
+        return False
 
 # MongoDB storage functions
 def get_user_id():
@@ -606,93 +670,104 @@ class QuestionGenerator:
         internships_str = "\n".join([f"- {i}" for i in extracted_data.get('internships', [])])
 
         prompt = f"""
-You are an expert assessment designer creating UNIQUE questions based on this specific resume. Each question must test the candidate's actual expertise in their stated skills and experiences.
+You are a **professional assessment designer with 25+ years of experience** in developing advanced, resume-based evaluation questions for hiring and learning assessments.  
+You specialize in creating *unique, realistic, and skill-relevant* questions that accurately measure a candidate’s ability to apply what they claim in their resume — whether they are from **technical** or **non-technical** backgrounds.
 
-**RESUME CONTENT:**
+Your task is to generate **{num_questions} deeply personalized, resume-specific questions** that are **non-generic, insightful, and progressively challenging.**
+
+---
+
+### 📄 **RESUME SUMMARY**
 - **Skills:** {skills_str if skills_str else 'Not specified'}
 - **Projects:** {projects_str if projects_str else 'Not specified'}
 - **Achievements:** {achievements_str if achievements_str else 'Not specified'}
 - **Experience:** {internships_str if internships_str else 'Not specified'}
 
-**CRITICAL REQUIREMENTS:**
-1. **NO GENERIC QUESTIONS** - Every question must reference their specific resume content
-2. **TEST REAL EXPERTISE** - Questions should reveal if they actually did what they claim
-3. **UNIQUE & NON-REPEATABLE** - Each question tests different aspects, no similar scenarios
-4. **PROGRESSIVE DIFFICULTY** - Start with basic recall, move to application, end with expert judgment
-5. **RESUME-SPECIFIC SCENARIOS** - Use their actual projects/achievements as question context
+---
 
-**Question Types to Generate:**
-- Technical implementation questions about their specific projects
-- Problem-solving scenarios based on their achievements
-- Best practices questions for their stated skills
-- Troubleshooting questions for technologies they claim to know
-- Architecture/design questions for their experience level
+### 🎯 **PRIMARY OBJECTIVE**
+Design assessment questions that:
+- Test *authentic understanding* and *applied reasoning* rather than definitions or memorization.
+- Are **grounded directly in the candidate’s resume** — each question must reference their actual projects, achievements, or experience.
+- Are **professionally written** and realistic, as if designed by a seasoned interviewer with **25+ years of expertise**.
+- Automatically adapt in tone:
+  - For **technical resumes:** Ask implementation, design, debugging, optimization, or reasoning-based questions.
+  - For **non-technical resumes:** Ask situational, behavioral, analytical, or management-based questions.
 
-**EXAMPLE STRUCTURE:**
-"In your [SPECIFIC PROJECT FROM RESUME], when you [SPECIFIC ACHIEVEMENT], what was the most critical factor for success?"
-"Based on your experience with [SPECIFIC SKILL], how would you approach [REALISTIC SCENARIO]?"
-"Given your background in [SPECIFIC DOMAIN], what would be your first step when [EXPERT-LEVEL PROBLEM]?"
+---
 
-**Generate exactly {num_questions} UNIQUE questions that:**
-- Reference specific resume elements (projects, skills, achievements)
-- Test actual knowledge depth, not just concepts
-- Progress from basic to expert-level scenarios
-- Cannot be answered by someone who didn't do the work
-- Cover different aspects of their claimed expertise
+### ⚙️ **QUESTION GUIDELINES**
+Each question **must**:
+1. Reference the candidate’s own **projects, experiences, or listed skills**.
+2. Be **unique** — every question should explore a different area or challenge.
+3. Be **non-generic** — avoid textbook or HR-style questions.
+   - ❌ Bad: “What is teamwork?”
+   - ✅ Good: “In your role managing the NGO Club at IILM, how did you ensure team accountability under pressure?”
+   - ✅ Good: “In your NO₂ air quality prediction model, how did you handle data gaps caused by cloudy satellite images?”
+4. Maintain **progressive difficulty**:
+   - **Basic:** Recall or explanation-based (understanding what they did)
+   - **Intermediate:** Application or scenario-based reasoning
+   - **Advanced:** Strategic, troubleshooting, or optimization-based questions
+5. Stay **balanced and professional** — written in the confident, precise tone of a **25+ year expert**.
 
-**JSON OUTPUT:**
+---
+
+### 💡 **QUESTION TYPES TO INCLUDE**
+Automatically adjust depending on the resume content:
+
+**For Technical Candidates:**
+- Implementation and optimization questions about their listed projects  
+- Data preprocessing, model evaluation, or algorithm selection reasoning  
+- Debugging or troubleshooting real-world technical issues  
+- Design and scalability decisions based on their experience  
+- Performance trade-offs and best practices  
+
+**For Non-Technical Candidates:**
+- Behavioral questions on teamwork, leadership, communication, and initiative  
+- Situational reasoning on deadlines, conflict resolution, or decision-making  
+- Analytical thinking and prioritization in real-life work situations  
+- Reflection on achievements, learning, and impact  
+
+---
+
+### 🧩 **OUTPUT FORMAT (JSON only)**
+Return a **valid JSON list** where each object follows this schema:
+
 [
   {{
-    "question": "[RESUME-SPECIFIC QUESTION]",
-    "options": ["[OPTION A]", "[OPTION B]", "[OPTION C]", "[OPTION D]"],
-    "correct": [0-3],
+    "question": "A realistic, resume-based question",
+    "options": ["Option A", "Option B", "Option C", "Option D"],
+    "correct": 0,
     "difficulty": "basic|intermediate|advanced",
-    "skill_area": "[SPECIFIC SKILL FROM RESUME]"
+    "skill_area": "Specific skill, role, or project name from resume"
   }}
-]"""
-        try:
-            print("[INFO] Generating questions with Groq...")
-            chat_completion = client.chat.completions.create(
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a JSON generator for technical skill assessment questions. You will only output a valid JSON list of objects."
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt,
-                    }
-                ],
-                model="llama-3.3-70b-versatile",
-                temperature=0.6
-            )
-            
-            response_content = chat_completion.choices[0].message.content.strip()
-            
-            # Clean response - remove markdown formatting if present
-            if response_content.startswith('```json'):
-                response_content = response_content[7:]
-            if response_content.endswith('```'):
-                response_content = response_content[:-3]
-            response_content = response_content.strip()
-            
-            parsed_json = json.loads(response_content)
-            questions = parsed_json if isinstance(parsed_json, list) else parsed_json.get('questions', [])
- 
-            if not isinstance(questions, list) or not all('question' in q and 'options' in q and 'correct' in q for q in questions):
-                 print("[ERROR] Groq response JSON is malformed or empty. Using fallback.")
-                 return QuestionGenerator.generate_fallback_questions(extracted_data, num_questions)
- 
-            if len(questions) < 10:
-                print(f"[ERROR] Groq returned only {len(questions)} questions. Using fallback.")
-                return QuestionGenerator.generate_fallback_questions(extracted_data, num_questions)
+]
 
-            print(f"[SUCCESS] Generated {len(questions)} questions from Groq.")
-            return questions[:num_questions]
+---
 
-        except Exception as e:
-            print(f"[ERROR] Groq API call failed: {e}. Using fallback questions.")
-            return QuestionGenerator.generate_fallback_questions(extracted_data, num_questions)
+### 🧠 **EXAMPLES**
+
+**Technical Example:**
+- “In your movie recommendation system built using Scikit-learn, why might cosine similarity outperform Euclidean distance when comparing user preferences?”
+- “During your NO₂ air quality mapping project with PyTorch, how would you validate model accuracy when ground sensor data is missing?”
+- “When your AI-based interview prep platform started giving inconsistent quiz recommendations, what metrics would you check first?”
+
+**Non-Technical Example:**
+- “As Sponsorship Lead for IILM University, how did you handle sponsor negotiations when targets were not being met?”
+- “During your NGO event coordination, how did you ensure volunteers remained motivated throughout the campaign?”
+- “In your internship at ABC Enterprises, what approach did you take to manage communication across different departments?”
+
+---
+
+### 🚀 **FINAL TASK**
+Generate exactly **{num_questions}** *resume-specific, unique, and progressively difficult* questions.  
+Each question must:
+- Be directly grounded in their resume,  
+- Be appropriate for their background (technical or non-technical),  
+- Be professional, insightful, and realistic,  
+- Reflect the experience and tone of a **seasoned assessment designer with 25+ years of expertise**.
+"""
+
 
     @staticmethod
     def generate_fallback_questions(extracted_data, num_questions):
@@ -1797,7 +1872,7 @@ def api_login():
 
 @app.route('/api/auth/signup', methods=['POST'])
 def api_signup():
-    """Handle signup API request."""
+    """Handle signup API request with verification."""
     try:
         data = request.json
         if not data:
@@ -1817,6 +1892,16 @@ def api_signup():
         if len(password) < 6:
             return jsonify({'success': False, 'message': 'Password must be at least 6 characters'}), 400
         
+        # Check verification status
+        email_verified = session.get('email_verified', False)
+        phone_verified = session.get('phone_verified', False)
+        
+        if not email_verified:
+            return jsonify({'success': False, 'message': 'Please verify your email first', 'require_verification': 'email'}), 400
+        
+        if not phone_verified:
+            return jsonify({'success': False, 'message': 'Please verify your phone number first', 'require_verification': 'phone'}), 400
+        
         if users_collection is None:
             return jsonify({'success': False, 'message': 'Database unavailable'}), 503
             
@@ -1829,6 +1914,8 @@ def api_signup():
             'email': email,
             'mobile': mobile,
             'password': generate_password_hash(password),
+            'email_verified': True,
+            'phone_verified': True,
             'created_at': datetime.utcnow(),
             'last_login': None
         }
@@ -1857,6 +1944,68 @@ def api_logout():
     session.pop('user_email', None)
     session.pop('user_name', None)
     return jsonify({'success': True, 'message': 'Logged out successfully'})
+
+@app.route('/api/auth/send-otp', methods=['POST'])
+def send_otp():
+    """Send OTP for email/phone verification."""
+    data = request.json
+    email = data.get('email', '').lower().strip()
+    phone = data.get('phone', '').strip()
+    verification_type = data.get('type', 'email')  # 'email' or 'phone'
+    
+    if verification_type == 'email' and not email:
+        return jsonify({'success': False, 'message': 'Email required'}), 400
+    if verification_type == 'phone' and not phone:
+        return jsonify({'success': False, 'message': 'Phone number required'}), 400
+    
+    otp = generate_otp()
+    expiry = datetime.utcnow() + timedelta(minutes=10)
+    
+    # Store OTP in session
+    session[f'otp_{verification_type}'] = otp
+    session[f'otp_{verification_type}_expiry'] = expiry
+    session[f'otp_{verification_type}_target'] = email if verification_type == 'email' else phone
+    
+    # Send OTP
+    if verification_type == 'email':
+        success = send_email_otp(email, otp)
+        message = 'OTP sent to email' if success else 'Failed to send email OTP'
+    else:
+        success = send_sms_otp(phone, otp)
+        message = 'OTP sent to phone' if success else 'Failed to send SMS OTP'
+    
+    return jsonify({'success': success, 'message': message})
+
+@app.route('/api/auth/verify-otp', methods=['POST'])
+def verify_otp():
+    """Verify OTP for email/phone."""
+    data = request.json
+    otp = data.get('otp', '').strip()
+    verification_type = data.get('type', 'email')
+    
+    if not otp:
+        return jsonify({'success': False, 'message': 'OTP required'}), 400
+    
+    stored_otp = session.get(f'otp_{verification_type}')
+    expiry = session.get(f'otp_{verification_type}_expiry')
+    
+    if not stored_otp or not expiry:
+        return jsonify({'success': False, 'message': 'No OTP found. Please request a new one.'}), 400
+    
+    if datetime.utcnow() > expiry:
+        return jsonify({'success': False, 'message': 'OTP expired. Please request a new one.'}), 400
+    
+    if otp != stored_otp:
+        return jsonify({'success': False, 'message': 'Invalid OTP'}), 400
+    
+    # Mark as verified
+    session[f'{verification_type}_verified'] = True
+    
+    # Clean up OTP data
+    session.pop(f'otp_{verification_type}', None)
+    session.pop(f'otp_{verification_type}_expiry', None)
+    
+    return jsonify({'success': True, 'message': f'{verification_type.title()} verified successfully'})
 
 @app.route('/Assets/<filename>')
 def assets(filename):

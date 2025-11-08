@@ -12,3 +12,4 @@ google-generativeai
 setuptools
 reportlab
 pymongo==4.6.0
+twilio>=8.0.0

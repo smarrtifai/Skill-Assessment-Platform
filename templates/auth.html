@@ -101,6 +101,20 @@
                                     <input type="email" id="signupEmail" required 
                                            style="width: 100%; padding: 1rem; border: 2px solid #e2e8f0; border-radius: 10px; font-size: 1rem; transition: all 0.3s ease;"
                                            placeholder="Enter your email address">
+                                    
+                                    <div id="email-verification" class="hidden" style="margin-top: 1rem; padding: 1rem; background: #f0f9ff; border-radius: 8px; border: 1px solid #0ea5e9;">
+                                        <div style="display: flex; gap: 0.5rem; margin-bottom: 0.5rem;">
+                                            <button type="button" onclick="sendOTP('email')" class="btn-secondary" style="flex: 1;">
+                                                <i class="fas fa-paper-plane"></i> Send OTP
+                                            </button>
+                                            <input type="text" id="email-otp" placeholder="Enter OTP" maxlength="6" 
+                                                   style="flex: 1; padding: 0.75rem; border: 2px solid #e2e8f0; border-radius: 8px;">
+                                            <button type="button" onclick="verifyOTP('email')" class="btn-primary" style="flex: 1;">
+                                                Verify
+                                            </button>
+                                        </div>
+                                        <span id="email-status" class="verification-status"></span>
+                                    </div>
                                 </div>
                                 
                                 <div style="margin-bottom: 1.5rem;">
@@ -110,6 +124,20 @@
                                     <input type="tel" id="signupMobile" required 
                                            style="width: 100%; padding: 1rem; border: 2px solid #e2e8f0; border-radius: 10px; font-size: 1rem; transition: all 0.3s ease;"
                                            placeholder="Enter your mobile number" pattern="[0-9]{10}" maxlength="10">
+                                    
+                                    <div id="phone-verification" class="hidden" style="margin-top: 1rem; padding: 1rem; background: #f0f9ff; border-radius: 8px; border: 1px solid #0ea5e9;">
+                                        <div style="display: flex; gap: 0.5rem; margin-bottom: 0.5rem;">
+                                            <button type="button" onclick="sendOTP('phone')" class="btn-secondary" style="flex: 1;">
+                                                <i class="fas fa-paper-plane"></i> Send OTP
+                                            </button>
+                                            <input type="text" id="phone-otp" placeholder="Enter OTP" maxlength="6" 
+                                                   style="flex: 1; padding: 0.75rem; border: 2px solid #e2e8f0; border-radius: 8px;">
+                                            <button type="button" onclick="verifyOTP('phone')" class="btn-primary" style="flex: 1;">
+                                                Verify
+                                            </button>
+                                        </div>
+                                        <span id="phone-status" class="verification-status"></span>
+                                    </div>
                                 </div>
                                 
                                 <div style="margin-bottom: 1.5rem;">
@@ -129,6 +157,8 @@
                                            style="width: 100%; padding: 1rem; border: 2px solid #e2e8f0; border-radius: 10px; font-size: 1rem; transition: all 0.3s ease;"
                                            placeholder="Confirm your password" minlength="6">
                                 </div>
+                                
+
                                 
                                 <button type="submit" class="btn-primary" style="width: 100%; margin-bottom: 1rem;">
                                     <i class="fas fa-user-plus"></i> Create Account
@@ -226,6 +256,95 @@
             }
         }
 
+        let currentOTPType = null;
+        let emailVerified = false;
+        let phoneVerified = false;
+
+        // Show verification sections when fields are filled
+        document.getElementById('signupEmail').addEventListener('input', function() {
+            if (this.value) {
+                document.getElementById('email-verification').classList.remove('hidden');
+            }
+        });
+        
+        document.getElementById('signupMobile').addEventListener('input', function() {
+            if (this.value && this.value.length === 10) {
+                document.getElementById('phone-verification').classList.remove('hidden');
+            }
+        });
+
+        // Send OTP for verification
+        async function sendOTP(type) {
+            const email = document.getElementById('signupEmail').value;
+            const phone = document.getElementById('signupMobile').value;
+            
+            if (type === 'email' && !email) {
+                alert('Please enter your email first');
+                return;
+            }
+            
+            if (type === 'phone' && !phone) {
+                alert('Please enter your phone number first');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/auth/send-otp', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, phone, type })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert(`OTP sent to your ${type}`);
+                } else {
+                    alert(data.message || 'Failed to send OTP');
+                }
+            } catch (error) {
+                alert('Failed to send OTP. Please try again.');
+            }
+        }
+
+        // Verify OTP
+        async function verifyOTP(type) {
+            const otp = document.getElementById(`${type}-otp`).value;
+            
+            if (!otp || otp.length !== 6) {
+                alert('Please enter a valid 6-digit OTP');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/auth/verify-otp', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ otp, type })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    if (type === 'email') {
+                        emailVerified = true;
+                        document.getElementById('email-status').innerHTML = '<i class="fas fa-check-circle" style="color: #10b981;"></i> Verified';
+                    } else {
+                        phoneVerified = true;
+                        document.getElementById('phone-status').innerHTML = '<i class="fas fa-check-circle" style="color: #10b981;"></i> Verified';
+                    }
+                    
+                    document.getElementById(`${type}-verification`).style.opacity = '0.6';
+                    document.getElementById(`${type}-otp`).value = '';
+                    alert(`${type.charAt(0).toUpperCase() + type.slice(1)} verified successfully!`);
+                } else {
+                    alert(data.message || 'Invalid OTP');
+                }
+            } catch (error) {
+                alert('Verification failed. Please try again.');
+            }
+        }
+
         // Handle signup form submission
         async function handleSignup(event) {
             event.preventDefault();
@@ -257,6 +376,8 @@
                 return;
             }
             
+
+            
             try {
                 const response = await fetch('/api/auth/signup', {
                     method: 'POST',
@@ -268,6 +389,8 @@
                 
                 if (data.success) {
                     showSuccessMessage();
+                } else if (data.require_verification) {
+                    alert(data.message);
                 } else {
                     alert(data.message || 'Signup failed');
                 }
@@ -319,6 +442,19 @@
                 });
             });
         });
+
+        // Add CSS for verification status
+        const style = document.createElement('style');
+        style.textContent = `
+            .verification-status {
+                font-size: 0.875rem;
+                font-weight: 500;
+            }
+            .hidden {
+                display: none !important;
+            }
+        `;
+        document.head.appendChild(style);
     </script>
 </body>
 </html>
