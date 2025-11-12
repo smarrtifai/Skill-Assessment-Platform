@@ -79,6 +79,8 @@ def send_email_otp(email, otp):
         smtp_server = os.environ.get('SMTP_SERVER') or app.config.get('SMTP_SERVER', 'smtp.gmail.com')
         smtp_port = int(os.environ.get('SMTP_PORT', app.config.get('SMTP_PORT', 587)))
         
+        print(f"[DEBUG] Email config - User: {email_user}, Server: {smtp_server}, Port: {smtp_port}")
+        
         if not email_user or not email_password:
             print("[ERROR] Email credentials not configured")
             return False
@@ -101,18 +103,29 @@ Smarrtif AI Team"""
         
         msg.attach(MIMEText(body, 'plain'))
         
+        print(f"[INFO] Connecting to SMTP server...")
         server = smtplib.SMTP(smtp_server, smtp_port)
+        server.set_debuglevel(1)  # Enable SMTP debugging
         server.starttls()
+        print(f"[INFO] Logging in to SMTP server...")
         server.login(email_user, email_password)
+        print(f"[INFO] Sending email...")
         server.sendmail(email_user, email, msg.as_string())
         server.quit()
         
         print(f"[SUCCESS] Email OTP sent to: {email}")
         return True
         
+    except smtplib.SMTPAuthenticationError as e:
+        print(f"[ERROR] SMTP Authentication failed: {e}")
+        return False
+    except smtplib.SMTPException as e:
+        print(f"[ERROR] SMTP error: {e}")
+        return False
     except Exception as e:
         print(f"[ERROR] Email OTP failed: {e}")
-        print(f"[DEBUG] SMTP Config - Server: {smtp_server}, Port: {smtp_port}, User: {email_user}")
+        import traceback
+        traceback.print_exc()
         return False
 
 def send_sms_otp(phone, otp):
@@ -1898,11 +1911,7 @@ def clear_session():
 
 @app.route('/api/debug_session')
 def debug_session():
-    """Debug route to check session data - REMOVE IN PRODUCTION."""
-    # Only allow in development
-    if os.environ.get('FLASK_ENV') != 'development':
-        return jsonify({'error': 'Not available in production'}), 403
-        
+    """Debug route to check session data."""
     user_id = get_user_id()
     # Don't expose sensitive session data
     safe_session = {
@@ -1914,6 +1923,15 @@ def debug_session():
     return jsonify({
         'session': safe_session,
         'user_id': user_id
+    })
+
+@app.route('/api/auth/check-session', methods=['GET'])
+def check_session():
+    """Check if user is authenticated."""
+    return jsonify({
+        'authenticated': bool(session.get('user_authenticated')),
+        'email': session.get('user_email'),
+        'name': session.get('user_name')
     })
 
 
@@ -2024,33 +2042,51 @@ def api_logout():
 @app.route('/api/auth/send-otp', methods=['POST'])
 def send_otp():
     """Send OTP for email verification only."""
-    data = request.json
-    email = data.get('email', '').lower().strip()
-    verification_type = data.get('type', 'email')
-    
-    if verification_type != 'email':
-        return jsonify({'success': False, 'message': 'Only email verification supported'}), 400
-    
-    if not email:
-        return jsonify({'success': False, 'message': 'Email required'}), 400
-    
-    otp = generate_otp()
-    expiry_timestamp = (datetime.utcnow() + timedelta(minutes=10)).timestamp()
-    
-    # Store OTP in session using timestamp
-    session[f'otp_{verification_type}'] = otp
-    session[f'otp_{verification_type}_expiry'] = expiry_timestamp
-    session[f'otp_{verification_type}_target'] = email
-    
-    # Send actual email in production
-    success = send_email_otp(email, otp)
-    
-    response = {'success': success, 'message': 'OTP sent to email' if success else 'Failed to send OTP'}
-    # Include OTP in response for testing in development only
-    if os.environ.get('FLASK_ENV') == 'development':
+    try:
+        data = request.json
+        if not data:
+            return jsonify({'success': False, 'message': 'No data provided'}), 400
+            
+        email = data.get('email', '').lower().strip()
+        verification_type = data.get('type', 'email')
+        
+        if verification_type != 'email':
+            return jsonify({'success': False, 'message': 'Only email verification supported'}), 400
+        
+        if not email:
+            return jsonify({'success': False, 'message': 'Email required'}), 400
+        
+        # Validate email format
+        import re
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        if not re.match(email_pattern, email):
+            return jsonify({'success': False, 'message': 'Invalid email format'}), 400
+        
+        otp = generate_otp()
+        expiry_timestamp = (datetime.utcnow() + timedelta(minutes=10)).timestamp()
+        
+        # Store OTP in session using timestamp
+        session[f'otp_{verification_type}'] = otp
+        session[f'otp_{verification_type}_expiry'] = expiry_timestamp
+        session[f'otp_{verification_type}_target'] = email
+        
+        print(f"[INFO] Attempting to send OTP to: {email}")
+        
+        # Send actual email in production
+        success = send_email_otp(email, otp)
+        
+        response = {'success': success, 'message': 'OTP sent to email' if success else 'Failed to send OTP'}
+        # Include OTP in response for testing
         response['otp'] = otp
-    
-    return jsonify(response)
+        
+        print(f"[INFO] OTP send result: {success}")
+        return jsonify(response)
+        
+    except Exception as e:
+        print(f"[ERROR] Send OTP error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'message': 'Internal server error'}), 500
 
 @app.route('/api/auth/verify-otp', methods=['POST'])
 def verify_otp():
