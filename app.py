@@ -74,12 +74,19 @@ def generate_otp():
 def send_email_otp(email, otp):
     """Send OTP via email."""
     try:
-        if not app.config['EMAIL_USER'] or not app.config['EMAIL_PASSWORD']:
+        email_user = os.environ.get('EMAIL_USER') or app.config.get('EMAIL_USER')
+        email_password = os.environ.get('EMAIL_PASSWORD') or app.config.get('EMAIL_PASSWORD')
+        smtp_server = os.environ.get('SMTP_SERVER') or app.config.get('SMTP_SERVER', 'smtp.gmail.com')
+        smtp_port = int(os.environ.get('SMTP_PORT', app.config.get('SMTP_PORT', 587)))
+        
+        if not email_user or not email_password:
             print("[ERROR] Email credentials not configured")
             return False
             
+        print(f"[INFO] Sending email from {email_user} to {email}")
+        
         msg = MIMEMultipart()
-        msg['From'] = app.config['EMAIL_USER']
+        msg['From'] = email_user
         msg['To'] = email
         msg['Subject'] = "Email Verification - SMARRTIF AI"
         
@@ -94,10 +101,10 @@ Smarrtif AI Team"""
         
         msg.attach(MIMEText(body, 'plain'))
         
-        server = smtplib.SMTP(app.config['SMTP_SERVER'], app.config['SMTP_PORT'])
+        server = smtplib.SMTP(smtp_server, smtp_port)
         server.starttls()
-        server.login(app.config['EMAIL_USER'], app.config['EMAIL_PASSWORD'])
-        server.sendmail(app.config['EMAIL_USER'], email, msg.as_string())
+        server.login(email_user, email_password)
+        server.sendmail(email_user, email, msg.as_string())
         server.quit()
         
         print(f"[SUCCESS] Email OTP sent to: {email}")
@@ -105,6 +112,7 @@ Smarrtif AI Team"""
         
     except Exception as e:
         print(f"[ERROR] Email OTP failed: {e}")
+        print(f"[DEBUG] SMTP Config - Server: {smtp_server}, Port: {smtp_port}, User: {email_user}")
         return False
 
 def send_sms_otp(phone, otp):
@@ -2034,8 +2042,14 @@ def send_otp():
     session[f'otp_{verification_type}_expiry'] = expiry_timestamp
     session[f'otp_{verification_type}_target'] = email
     
-    # Don't send actual email, just return success with OTP
-    response = {'success': True, 'message': f'OTP generated for {verification_type}', 'otp': otp}
+    # Send actual email in production
+    success = send_email_otp(email, otp)
+    
+    response = {'success': success, 'message': 'OTP sent to email' if success else 'Failed to send OTP'}
+    # Include OTP in response for testing in development only
+    if os.environ.get('FLASK_ENV') == 'development':
+        response['otp'] = otp
+    
     return jsonify(response)
 
 @app.route('/api/auth/verify-otp', methods=['POST'])
