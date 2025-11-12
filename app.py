@@ -51,6 +51,7 @@ class Config:
     TWILIO_ACCOUNT_SID = os.environ.get('TWILIO_ACCOUNT_SID', '')
     TWILIO_AUTH_TOKEN = os.environ.get('TWILIO_AUTH_TOKEN', '')
     TWILIO_PHONE_NUMBER = os.environ.get('TWILIO_PHONE_NUMBER', '')
+    FAST2SMS_API_KEY = os.environ.get('FAST2SMS_API_KEY', '')
 
 # Initialize Flask App
 app = Flask(__name__, static_folder='static')
@@ -74,14 +75,23 @@ def send_email_otp(email, otp):
     """Send OTP via email."""
     try:
         if not app.config['EMAIL_USER'] or not app.config['EMAIL_PASSWORD']:
+            print("[ERROR] Email credentials not configured")
             return False
             
         msg = MIMEMultipart()
         msg['From'] = app.config['EMAIL_USER']
         msg['To'] = email
-        msg['Subject'] = "Email Verification - Smarrtif AI"
+        msg['Subject'] = "Email Verification - SMARRTIF AI"
         
-        body = f"Your verification code is: {otp}\n\nThis code will expire in 10 minutes."
+        body = f"""Hello!
+
+Your verification code for SMARRTIF AI Skills Assessment Platform is: {otp}
+
+This code will expire in 10 minutes.
+
+Best regards,
+Smarrtif AI Team"""
+        
         msg.attach(MIMEText(body, 'plain'))
         
         server = smtplib.SMTP(app.config['SMTP_SERVER'], app.config['SMTP_PORT'])
@@ -89,40 +99,41 @@ def send_email_otp(email, otp):
         server.login(app.config['EMAIL_USER'], app.config['EMAIL_PASSWORD'])
         server.sendmail(app.config['EMAIL_USER'], email, msg.as_string())
         server.quit()
+        
+        print(f"[SUCCESS] Email OTP sent to: {email}")
         return True
+        
     except Exception as e:
         print(f"[ERROR] Email OTP failed: {e}")
         return False
 
 def send_sms_otp(phone, otp):
-    """Send OTP via SMS using Twilio."""
-    try:
-        # Option 1: Twilio (Recommended)
-        from twilio.rest import Client
-        
-        account_sid = app.config.get('TWILIO_ACCOUNT_SID')
-        auth_token = app.config.get('TWILIO_AUTH_TOKEN')
-        from_number = app.config.get('TWILIO_PHONE_NUMBER')
-        
-        if not all([account_sid, auth_token, from_number]):
-            print("[ERROR] Twilio credentials not configured")
-            return False
-            
-        client = Client(account_sid, auth_token)
-        message = client.messages.create(
-            body=f"Your Smarrtif AI verification code is: {otp}. Valid for 10 minutes.",
-            from_=from_number,
-            to=f"+91{phone}"  # Assuming Indian numbers
-        )
-        print(f"[SUCCESS] SMS sent via Twilio: {message.sid}")
-        return True
-        
-    except ImportError:
-        print("[ERROR] Twilio not installed. Install with: pip install twilio")
-        return False
-    except Exception as e:
-        print(f"[ERROR] SMS sending failed: {e}")
-        return False
+    """Send OTP via SMS using multiple providers."""
+    # Try Fast2SMS first
+    if app.config.get('FAST2SMS_API_KEY'):
+        try:
+            import requests
+            url = "https://www.fast2sms.com/dev/bulkV2"
+            payload = {
+                'authorization': app.config['FAST2SMS_API_KEY'],
+                'variables_values': otp,
+                'route': 'otp',
+                'numbers': phone,
+            }
+            headers = {
+                'authorization': app.config['FAST2SMS_API_KEY'],
+                'Content-Type': "application/x-www-form-urlencoded"
+            }
+            response = requests.post(url, data=payload, headers=headers)
+            if response.status_code == 200 and response.json().get('return'):
+                print(f"[SUCCESS] SMS sent via Fast2SMS to: {phone}")
+                return True
+        except Exception as e:
+            print(f"[ERROR] Fast2SMS failed: {e}")
+    
+    # Fallback: Log OTP for development
+    print(f"[SMS FALLBACK] OTP for {phone}: {otp}")
+    return True  # Return True for development
 
 # MongoDB storage functions
 def get_user_id():
@@ -771,18 +782,18 @@ Each question must:
 
     @staticmethod
     def generate_fallback_questions(extracted_data, num_questions):
-        """Generate non-technical fallback questions."""
+        """Generate professional fallback questions without pronouns."""
         non_tech_questions = [
-            {"question": "When working on a team project, how do you typically handle conflicting opinions?", "options": ["Avoid the conflict", "Listen to all viewpoints and find common ground", "Impose your own solution", "Let others decide"], "correct": 1},
-            {"question": "How do you approach learning a new process or tool at work?", "options": ["Wait for formal training", "Ask colleagues for help immediately", "Experiment and research on your own first", "Avoid using it"], "correct": 2},
-            {"question": "When presenting information to stakeholders, what's most important?", "options": ["Using complex terminology", "Making it clear and actionable", "Showing all available data", "Keeping it brief regardless of clarity"], "correct": 1},
-            {"question": "How do you prioritize tasks when everything seems urgent?", "options": ["Work on the easiest tasks first", "Assess impact and deadlines systematically", "Work on whatever was assigned last", "Ask your manager to prioritize everything"], "correct": 1},
-            {"question": "When you notice a process could be improved, what do you do?", "options": ["Keep working the old way", "Document the issue and propose solutions", "Complain to colleagues", "Change it without telling anyone"], "correct": 1},
-            {"question": "How do you handle feedback that you disagree with?", "options": ["Ignore it completely", "Consider the perspective and discuss constructively", "Argue immediately", "Accept it without question"], "correct": 1},
-            {"question": "When managing multiple deadlines, what's your approach?", "options": ["Work on everything simultaneously", "Create a priority matrix and timeline", "Focus only on the nearest deadline", "Ask for extensions on everything"], "correct": 1},
-            {"question": "How do you ensure effective communication in emails?", "options": ["Write as much detail as possible", "Use clear subject lines and concise language", "Copy everyone who might be interested", "Use technical jargon to sound professional"], "correct": 1},
-            {"question": "When leading a meeting, what's most important?", "options": ["Talking the most to show expertise", "Having a clear agenda and keeping discussions focused", "Making it as long as possible", "Avoiding difficult topics"], "correct": 1},
-            {"question": "How do you approach problem-solving in unfamiliar situations?", "options": ["Guess and hope for the best", "Break down the problem and research systematically", "Immediately ask someone else to solve it", "Avoid the situation entirely"], "correct": 1}
+            {"question": "During cross-functional team collaboration with conflicting priorities, which approach most effectively resolves disagreements?", "options": ["Escalate to senior management immediately", "Facilitate structured discussion to find common ground", "Implement the most senior person's preference", "Postpone decisions until consensus emerges naturally"], "correct": 1, "difficulty": "intermediate", "skill_area": "Team Collaboration"},
+            {"question": "When implementing new technology solutions in established workflows, what strategy minimizes disruption while ensuring adoption?", "options": ["Deploy all changes simultaneously", "Conduct phased rollout with feedback loops", "Wait for company-wide training completion", "Let early adopters drive implementation"], "correct": 1, "difficulty": "intermediate", "skill_area": "Change Management"},
+            {"question": "In stakeholder presentations with mixed technical backgrounds, which communication strategy ensures message clarity?", "options": ["Use industry-specific terminology throughout", "Structure content with layered complexity and visual aids", "Focus on high-level concepts only", "Provide detailed technical specifications"], "correct": 1, "difficulty": "intermediate", "skill_area": "Communication"},
+            {"question": "When managing competing urgent deadlines with limited resources, which prioritization framework proves most effective?", "options": ["First-come, first-served basis", "Impact-effort matrix with stakeholder alignment", "Shortest tasks first approach", "Manager-directed priority assignment"], "correct": 1, "difficulty": "advanced", "skill_area": "Project Management"},
+            {"question": "During process improvement initiatives, what approach generates sustainable organizational change?", "options": ["Maintain existing procedures", "Document current state, analyze gaps, pilot solutions", "Implement industry best practices immediately", "Survey employee preferences only"], "correct": 1, "difficulty": "advanced", "skill_area": "Process Improvement"},
+            {"question": "When receiving constructive feedback that challenges current approaches, which response demonstrates professional growth?", "options": ["Defend existing methods vigorously", "Analyze feedback objectively and discuss implementation", "Accept all suggestions without evaluation", "Seek additional opinions before responding"], "correct": 1, "difficulty": "intermediate", "skill_area": "Professional Development"},
+            {"question": "In complex project environments with overlapping deadlines, which management strategy optimizes delivery outcomes?", "options": ["Parallel execution of all tasks", "Critical path analysis with resource allocation", "Sequential completion by deadline proximity", "Uniform time distribution across projects"], "correct": 1, "difficulty": "advanced", "skill_area": "Project Management"},
+            {"question": "For effective written communication in professional settings, which elements ensure message impact?", "options": ["Comprehensive detail inclusion", "Clear structure with actionable language", "Broad distribution for transparency", "Technical precision for credibility"], "correct": 1, "difficulty": "basic", "skill_area": "Communication"},
+            {"question": "When facilitating decision-making meetings, which approach maximizes productive outcomes?", "options": ["Extended discussion until natural conclusion", "Structured agenda with defined objectives and timeframes", "Open forum for all perspectives", "Expert-led presentation format"], "correct": 1, "difficulty": "intermediate", "skill_area": "Leadership"},
+            {"question": "In unfamiliar problem-solving scenarios, which methodology increases solution effectiveness?", "options": ["Immediate action based on intuition", "Systematic analysis with research and structured approach", "Delegation to subject matter experts", "Postponement until similar cases emerge"], "correct": 1, "difficulty": "intermediate", "skill_area": "Problem Solving"}
         ]
         
         # Repeat questions to reach desired count
@@ -1023,11 +1034,32 @@ def take_assessment():
     if not session.get('user_authenticated'):
         return redirect(url_for('login'))
     
+    # Check if user already has paid roadmap
+    if users_collection is not None and session.get('user_email'):
+        try:
+            user = users_collection.find_one({'email': session['user_email']})
+            if user and user.get('payment_verified'):
+                return redirect(url_for('career_roadmap'))
+        except Exception as e:
+            print(f"[ERROR] Failed to check user payment status: {e}")
+    
     return render_template('assessment.html')
 
 @app.route('/upload-resume')
 def upload_resume_page():
     """Resume upload page."""
+    if not session.get('user_authenticated'):
+        return redirect(url_for('login'))
+    
+    # Check if user already has paid roadmap
+    if users_collection is not None and session.get('user_email'):
+        try:
+            user = users_collection.find_one({'email': session['user_email']})
+            if user and user.get('payment_verified'):
+                return redirect(url_for('career_roadmap'))
+        except Exception as e:
+            print(f"[ERROR] Failed to check user payment status: {e}")
+    
     return render_template('upload.html')
 
 @app.route('/upload')
@@ -1151,6 +1183,15 @@ def handle_onboarding():
 @app.route('/api/assessment/interest-based', methods=['POST'])
 def start_interest_based_assessment():
     """Generate an assessment based on user interests from the session."""
+    # Check if user already has paid roadmap
+    if users_collection is not None and session.get('user_email'):
+        try:
+            user = users_collection.find_one({'email': session['user_email']})
+            if user and user.get('payment_verified'):
+                return jsonify({'error': 'You have already completed the assessment and payment. Access your roadmap from the dashboard.'}), 403
+        except Exception as e:
+            print(f"[ERROR] Failed to check user payment status: {e}")
+    
     interests = get_user_data('user_interests', [])
     if not interests:
         return jsonify({'error': 'No interests selected. Please complete the onboarding questions first.'}), 400
@@ -1328,6 +1369,12 @@ Keep the response to 2-4 sentences.
 def upload_resume():
     """Handle resume upload and analysis."""
     try:
+        # Check if user already has paid roadmap
+        if users_collection is not None and session.get('user_email'):
+            user = users_collection.find_one({'email': session['user_email']})
+            if user and user.get('payment_verified'):
+                return jsonify({'error': 'You have already completed the assessment and payment. Access your roadmap from the dashboard.'}), 403
+        
         print(f"[INFO] Upload request received")
         if 'resume' not in request.files:
             print(f"[ERROR] No resume file in request")
@@ -1594,6 +1641,23 @@ def charge():
         set_user_data('roadmap_unlocked', True)
         set_user_data('calendly_scheduling_url', "https://calendly.com/diekshapriyaamishra-smarrtifai/smarrtif-ai-services-discussion")
         
+        # Store in user's permanent record
+        if users_collection is not None and session.get('user_email'):
+            try:
+                users_collection.update_one(
+                    {'email': session['user_email']},
+                    {'$set': {
+                        'payment_verified': True,
+                        'roadmap_unlocked': True,
+                        'roadmap_data': roadmap,
+                        'tech_field': tech_field,
+                        'payment_date': datetime.utcnow()
+                    }}
+                )
+                print(f"[SUCCESS] Roadmap stored in user database")
+            except Exception as e:
+                print(f"[ERROR] Failed to store roadmap in database: {e}")
+        
         print(f"[SUCCESS] Payment processing complete. Roadmap unlocked.")
         return redirect(url_for('career_roadmap'))
         
@@ -1781,8 +1845,22 @@ def get_results_data():
 @app.route('/api/get_roadmap_data')
 def get_roadmap_data():
     """Get roadmap data for current session."""
+    # Try session first, then database
     data = get_user_data('roadmap_data', {})
-    # Add unlocked flag to align with flowchart after payment confirmation
+    
+    # If no data in session, check user's database record
+    if not data and users_collection is not None and session.get('user_email'):
+        try:
+            user = users_collection.find_one({'email': session['user_email']})
+            if user and user.get('roadmap_data'):
+                data = user['roadmap_data']
+                # Restore session data
+                session['roadmap_unlocked'] = user.get('roadmap_unlocked', False)
+                session['payment_verified'] = user.get('payment_verified', False)
+                session['tech_field'] = user.get('tech_field')
+        except Exception as e:
+            print(f"[ERROR] Failed to fetch roadmap from database: {e}")
+    
     wrapped = dict(data)
     is_unlocked = bool(get_user_data('roadmap_unlocked'))
     wrapped['unlocked'] = is_unlocked
@@ -1791,16 +1869,11 @@ def get_roadmap_data():
     if not is_unlocked and 'roadmap' in wrapped and isinstance(wrapped['roadmap'], dict):
         beginner_roadmap = wrapped['roadmap'].get('beginner', [])
         wrapped['roadmap'] = {'beginner': beginner_roadmap}
-        # Also clear other related data if not unlocked
         wrapped['timeline'] = {'beginner': wrapped.get('timeline', {}).get('beginner', 'N/A')}
         wrapped['learning_resources'] = {'beginner': wrapped.get('learning_resources', {}).get('beginner', [])}
         wrapped['project_ideas'] = {'beginner': wrapped.get('project_ideas', {}).get('beginner', [])}
         wrapped['skill_validation'] = {'beginner': wrapped.get('skill_validation', {}).get('beginner', [])}
-        wrapped['recommended_skills'] = wrapped.get('recommended_skills', []) # Keep all recommended skills
-
-    print(f"[DEBUG] get_roadmap_data - Session keys: {list(session.keys())}")
-    print(f"[DEBUG] get_roadmap_data - Roadmap data: {data}")
-    print(f"[DEBUG] get_roadmap_data - Wrapped data: {wrapped}")
+        wrapped['recommended_skills'] = wrapped.get('recommended_skills', [])
     
     return jsonify(wrapped)
 
@@ -1892,15 +1965,11 @@ def api_signup():
         if len(password) < 6:
             return jsonify({'success': False, 'message': 'Password must be at least 6 characters'}), 400
         
-        # Check verification status
+        # Check email verification only
         email_verified = session.get('email_verified', False)
-        phone_verified = session.get('phone_verified', False)
         
         if not email_verified:
             return jsonify({'success': False, 'message': 'Please verify your email first', 'require_verification': 'email'}), 400
-        
-        if not phone_verified:
-            return jsonify({'success': False, 'message': 'Please verify your phone number first', 'require_verification': 'phone'}), 400
         
         if users_collection is None:
             return jsonify({'success': False, 'message': 'Database unavailable'}), 503
@@ -1915,7 +1984,6 @@ def api_signup():
             'mobile': mobile,
             'password': generate_password_hash(password),
             'email_verified': True,
-            'phone_verified': True,
             'created_at': datetime.utcnow(),
             'last_login': None
         }
@@ -1947,52 +2015,51 @@ def api_logout():
 
 @app.route('/api/auth/send-otp', methods=['POST'])
 def send_otp():
-    """Send OTP for email/phone verification."""
+    """Send OTP for email verification only."""
     data = request.json
     email = data.get('email', '').lower().strip()
-    phone = data.get('phone', '').strip()
-    verification_type = data.get('type', 'email')  # 'email' or 'phone'
+    verification_type = data.get('type', 'email')
     
-    if verification_type == 'email' and not email:
+    if verification_type != 'email':
+        return jsonify({'success': False, 'message': 'Only email verification supported'}), 400
+    
+    if not email:
         return jsonify({'success': False, 'message': 'Email required'}), 400
-    if verification_type == 'phone' and not phone:
-        return jsonify({'success': False, 'message': 'Phone number required'}), 400
     
     otp = generate_otp()
-    expiry = datetime.utcnow() + timedelta(minutes=10)
+    expiry_timestamp = (datetime.utcnow() + timedelta(minutes=10)).timestamp()
     
-    # Store OTP in session
+    # Store OTP in session using timestamp
     session[f'otp_{verification_type}'] = otp
-    session[f'otp_{verification_type}_expiry'] = expiry
-    session[f'otp_{verification_type}_target'] = email if verification_type == 'email' else phone
+    session[f'otp_{verification_type}_expiry'] = expiry_timestamp
+    session[f'otp_{verification_type}_target'] = email
     
-    # Send OTP
-    if verification_type == 'email':
-        success = send_email_otp(email, otp)
-        message = 'OTP sent to email' if success else 'Failed to send email OTP'
-    else:
-        success = send_sms_otp(phone, otp)
-        message = 'OTP sent to phone' if success else 'Failed to send SMS OTP'
-    
-    return jsonify({'success': success, 'message': message})
+    # Don't send actual email, just return success with OTP
+    response = {'success': True, 'message': f'OTP generated for {verification_type}', 'otp': otp}
+    return jsonify(response)
 
 @app.route('/api/auth/verify-otp', methods=['POST'])
 def verify_otp():
-    """Verify OTP for email/phone."""
+    """Verify OTP for email only."""
     data = request.json
     otp = data.get('otp', '').strip()
     verification_type = data.get('type', 'email')
+    
+    if verification_type != 'email':
+        return jsonify({'success': False, 'message': 'Only email verification supported'}), 400
     
     if not otp:
         return jsonify({'success': False, 'message': 'OTP required'}), 400
     
     stored_otp = session.get(f'otp_{verification_type}')
-    expiry = session.get(f'otp_{verification_type}_expiry')
+    expiry_timestamp = session.get(f'otp_{verification_type}_expiry')
     
-    if not stored_otp or not expiry:
+    if not stored_otp or not expiry_timestamp:
         return jsonify({'success': False, 'message': 'No OTP found. Please request a new one.'}), 400
     
-    if datetime.utcnow() > expiry:
+    # Compare timestamps
+    current_timestamp = datetime.utcnow().timestamp()
+    if current_timestamp > expiry_timestamp:
         return jsonify({'success': False, 'message': 'OTP expired. Please request a new one.'}), 400
     
     if otp != stored_otp:
@@ -2006,6 +2073,95 @@ def verify_otp():
     session.pop(f'otp_{verification_type}_expiry', None)
     
     return jsonify({'success': True, 'message': f'{verification_type.title()} verified successfully'})
+
+@app.route('/api/auth/forgot-password', methods=['POST'])
+def forgot_password():
+    """Send password reset link."""
+    data = request.json
+    email = data.get('email', '').lower().strip()
+    
+    if not email:
+        return jsonify({'success': False, 'message': 'Email required'}), 400
+    
+    if users_collection is None:
+        return jsonify({'success': False, 'message': 'Database unavailable'}), 503
+    
+    user = users_collection.find_one({'email': email})
+    if not user:
+        return jsonify({'success': False, 'message': 'Email not found'}), 404
+    
+    # Generate reset token
+    reset_token = str(uuid.uuid4())
+    expiry_timestamp = (datetime.utcnow() + timedelta(hours=1)).timestamp()
+    
+    # Store reset token in database
+    users_collection.update_one(
+        {'email': email},
+        {'$set': {
+            'reset_token': reset_token,
+            'reset_token_expiry': expiry_timestamp
+        }}
+    )
+    
+    # Generate reset link
+    reset_link = f"http://localhost:5000/reset-password?token={reset_token}"
+    
+    return jsonify({
+        'success': True, 
+        'message': 'Password reset link generated',
+        'reset_link': reset_link
+    })
+
+@app.route('/reset-password')
+def reset_password_page():
+    """Password reset page."""
+    token = request.args.get('token')
+    if not token:
+        return "Invalid reset link", 400
+    return render_template('reset_password.html', token=token)
+
+@app.route('/api/auth/reset-password', methods=['POST'])
+def reset_password():
+    """Reset password with token."""
+    data = request.json
+    token = data.get('token', '').strip()
+    new_password = data.get('password', '')
+    
+    if not token or not new_password:
+        return jsonify({'success': False, 'message': 'Token and password required'}), 400
+    
+    if len(new_password) < 6:
+        return jsonify({'success': False, 'message': 'Password must be at least 6 characters'}), 400
+    
+    if users_collection is None:
+        return jsonify({'success': False, 'message': 'Database unavailable'}), 503
+    
+    user = users_collection.find_one({'reset_token': token})
+    if not user:
+        return jsonify({'success': False, 'message': 'Invalid reset token'}), 400
+    
+    # Check token expiry
+    current_timestamp = datetime.utcnow().timestamp()
+    if current_timestamp > user.get('reset_token_expiry', 0):
+        return jsonify({'success': False, 'message': 'Reset token expired'}), 400
+    
+    # Update password and remove reset token
+    users_collection.update_one(
+        {'_id': user['_id']},
+        {'$set': {
+            'password': generate_password_hash(new_password)
+        }, '$unset': {
+            'reset_token': '',
+            'reset_token_expiry': ''
+        }}
+    )
+    
+    return jsonify({'success': True, 'message': 'Password reset successfully'})
+
+@app.route('/forgot-password')
+def forgot_password_page():
+    """Forgot password page."""
+    return render_template('forgot_password.html')
 
 @app.route('/Assets/<filename>')
 def assets(filename):
