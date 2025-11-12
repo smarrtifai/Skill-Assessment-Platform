@@ -79,8 +79,6 @@ def send_email_otp(email, otp):
         smtp_server = os.environ.get('SMTP_SERVER') or app.config.get('SMTP_SERVER', 'smtp.gmail.com')
         smtp_port = int(os.environ.get('SMTP_PORT', app.config.get('SMTP_PORT', 587)))
         
-        print(f"[DEBUG] Email config - User: {email_user}, Server: {smtp_server}, Port: {smtp_port}")
-        
         if not email_user or not email_password:
             print("[ERROR] Email credentials not configured")
             return False
@@ -103,29 +101,17 @@ Smarrtif AI Team"""
         
         msg.attach(MIMEText(body, 'plain'))
         
-        print(f"[INFO] Connecting to SMTP server...")
         server = smtplib.SMTP(smtp_server, smtp_port)
-        server.set_debuglevel(1)  # Enable SMTP debugging
         server.starttls()
-        print(f"[INFO] Logging in to SMTP server...")
         server.login(email_user, email_password)
-        print(f"[INFO] Sending email...")
         server.sendmail(email_user, email, msg.as_string())
         server.quit()
         
         print(f"[SUCCESS] Email OTP sent to: {email}")
         return True
         
-    except smtplib.SMTPAuthenticationError as e:
-        print(f"[ERROR] SMTP Authentication failed: {e}")
-        return False
-    except smtplib.SMTPException as e:
-        print(f"[ERROR] SMTP error: {e}")
-        return False
     except Exception as e:
         print(f"[ERROR] Email OTP failed: {e}")
-        import traceback
-        traceback.print_exc()
         return False
 
 def send_sms_otp(phone, otp):
@@ -1909,11 +1895,19 @@ def clear_session():
     session.clear()
     return jsonify({'success': True})
 
-@app.route('/api/debug_session')
+@app.route('/debug_session')
 def debug_session():
     """Debug route to check session data."""
+    return jsonify({
+        'user_authenticated': bool(session.get('user_authenticated')),
+        'user_email': session.get('user_email'),
+        'user_name': session.get('user_name')
+    })
+
+@app.route('/api/debug_session')
+def api_debug_session():
+    """API Debug route to check session data."""
     user_id = get_user_id()
-    # Don't expose sensitive session data
     safe_session = {
         'user_authenticated': session.get('user_authenticated'),
         'user_email': session.get('user_email'),
