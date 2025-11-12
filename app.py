@@ -72,46 +72,33 @@ def generate_otp():
     return ''.join(random.choices(string.digits, k=6))
 
 def send_email_otp(email, otp):
-    """Send OTP via email."""
+    """Send OTP via email with timeout and retry."""
+    import socket
+    
     try:
-        email_user = os.environ.get('EMAIL_USER') or app.config.get('EMAIL_USER')
-        email_password = os.environ.get('EMAIL_PASSWORD') or app.config.get('EMAIL_PASSWORD')
-        smtp_server = os.environ.get('SMTP_SERVER') or app.config.get('SMTP_SERVER', 'smtp.gmail.com')
-        smtp_port = int(os.environ.get('SMTP_PORT', app.config.get('SMTP_PORT', 587)))
+        email_user = os.environ.get('EMAIL_USER')
+        email_password = os.environ.get('EMAIL_PASSWORD')
         
         if not email_user or not email_password:
-            print("[ERROR] Email credentials not configured")
             return False
             
-        print(f"[INFO] Sending email from {email_user} to {email}")
-        
-        msg = MIMEMultipart()
+        msg = MIMEText(f"Your SMARRTIF AI verification code is: {otp}\n\nThis code expires in 10 minutes.")
+        msg['Subject'] = 'Email Verification - SMARRTIF AI'
         msg['From'] = email_user
         msg['To'] = email
-        msg['Subject'] = "Email Verification - SMARRTIF AI"
         
-        body = f"""Hello!
-
-Your verification code for SMARRTIF AI Skills Assessment Platform is: {otp}
-
-This code will expire in 10 minutes.
-
-Best regards,
-Smarrtif AI Team"""
+        # Set socket timeout
+        socket.setdefaulttimeout(10)
         
-        msg.attach(MIMEText(body, 'plain'))
-        
-        server = smtplib.SMTP(smtp_server, smtp_port)
+        server = smtplib.SMTP('smtp.gmail.com', 587, timeout=10)
         server.starttls()
         server.login(email_user, email_password)
-        server.sendmail(email_user, email, msg.as_string())
+        server.send_message(msg)
         server.quit()
         
-        print(f"[SUCCESS] Email OTP sent to: {email}")
         return True
         
-    except Exception as e:
-        print(f"[ERROR] Email OTP failed: {e}")
+    except Exception:
         return False
 
 def send_sms_otp(phone, otp):
@@ -2035,7 +2022,7 @@ def api_logout():
 
 @app.route('/api/auth/send-otp', methods=['POST'])
 def send_otp():
-    """Send OTP for email verification only."""
+    """Send OTP for email verification."""
     try:
         data = request.json
         if not data:
@@ -2044,43 +2031,34 @@ def send_otp():
         email = data.get('email', '').lower().strip()
         verification_type = data.get('type', 'email')
         
-        if verification_type != 'email':
-            return jsonify({'success': False, 'message': 'Only email verification supported'}), 400
-        
-        if not email:
-            return jsonify({'success': False, 'message': 'Email required'}), 400
-        
-        # Validate email format
-        import re
-        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-        if not re.match(email_pattern, email):
-            return jsonify({'success': False, 'message': 'Invalid email format'}), 400
+        if verification_type != 'email' or not email:
+            return jsonify({'success': False, 'message': 'Valid email required'}), 400
         
         otp = generate_otp()
         expiry_timestamp = (datetime.utcnow() + timedelta(minutes=10)).timestamp()
         
-        # Store OTP in session using timestamp
+        # Store OTP in session
         session[f'otp_{verification_type}'] = otp
         session[f'otp_{verification_type}_expiry'] = expiry_timestamp
         session[f'otp_{verification_type}_target'] = email
         
-        print(f"[INFO] Attempting to send OTP to: {email}")
+        # Send email OTP
+        email_sent = send_email_otp(email, otp)
         
-        # Send actual email in production
-        success = send_email_otp(email, otp)
-        
-        response = {'success': success, 'message': 'OTP sent to email' if success else 'Failed to send OTP'}
-        # Include OTP in response for testing
-        response['otp'] = otp
-        
-        print(f"[INFO] OTP send result: {success}")
-        return jsonify(response)
+        if email_sent:
+            return jsonify({
+                'success': True, 
+                'message': 'OTP sent to your email'
+            })
+        else:
+            return jsonify({
+                'success': False, 
+                'message': 'Failed to send OTP. Please try again.'
+            }), 500
         
     except Exception as e:
         print(f"[ERROR] Send OTP error: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'success': False, 'message': 'Internal server error'}), 500
+        return jsonify({'success': False, 'message': 'Service temporarily unavailable'}), 500
 
 @app.route('/api/auth/verify-otp', methods=['POST'])
 def verify_otp():
