@@ -22,13 +22,9 @@ from pymongo import MongoClient
 from pymongo.server_api import ServerApi
 from werkzeug.security import generate_password_hash, check_password_hash
 from bson.objectid import ObjectId
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+
 import random
 import string
-
-
 
 load_dotenv()
 
@@ -44,10 +40,7 @@ class Config:
     GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', 'AIzaSyB7JLNTFWY_Q5EFt-8J8kQDZ-UVNDpDZBY')
     MONGODB_URI = os.environ.get('MONGODB_URI', 'mongodb://localhost:27017/')
     DB_NAME = os.environ.get('DB_NAME', 'skills_assessment')
-    SMTP_SERVER = os.environ.get('SMTP_SERVER', 'smtp.gmail.com')
-    SMTP_PORT = int(os.environ.get('SMTP_PORT', '587'))
-    EMAIL_USER = os.environ.get('EMAIL_USER', '')
-    EMAIL_PASSWORD = os.environ.get('EMAIL_PASSWORD', '')
+    RESEND_API_KEY = os.environ.get('RESEND_API_KEY', 're_R8pgsGgD_5wgvt6jkpg6Thea3YBhhxhcE')
     TWILIO_ACCOUNT_SID = os.environ.get('TWILIO_ACCOUNT_SID', '')
     TWILIO_AUTH_TOKEN = os.environ.get('TWILIO_AUTH_TOKEN', '')
     TWILIO_PHONE_NUMBER = os.environ.get('TWILIO_PHONE_NUMBER', '')
@@ -66,68 +59,64 @@ app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
-# OTP Verification Functions
-def generate_otp():
-    """Generate 6-digit OTP."""
-    return ''.join(random.choices(string.digits, k=6))
+import os
+import random
+import resend
 
+# Generate OTP
+def generate_otp():
+    """Generate a 6-digit OTP."""
+    return str(random.randint(100000, 999999))
+
+
+# Send OTP Email
 def send_email_otp(email, otp):
-    """Send OTP via email with timeout and retry."""
-    import socket
-    
+    """Send OTP via email using Resend API."""
     try:
-        email_user = os.environ.get('EMAIL_USER')
-        email_password = os.environ.get('EMAIL_PASSWORD')
-        
-        if not email_user or not email_password:
-            return False
-            
-        msg = MIMEText(f"Your SMARRTIF AI verification code is: {otp}\n\nThis code expires in 10 minutes.")
-        msg['Subject'] = 'Email Verification - SMARRTIF AI'
-        msg['From'] = email_user
-        msg['To'] = email
-        
-        # Set socket timeout
-        socket.setdefaulttimeout(10)
-        
-        server = smtplib.SMTP('smtp.gmail.com', 587, timeout=10)
-        server.starttls()
-        server.login(email_user, email_password)
-        server.send_message(msg)
-        server.quit()
-        
+        resend.api_key = os.environ.get('RESEND_API_KEY')
+
+        response = resend.Emails.send({
+            "from": "contactus@smarrtifai.com",
+            "to": email,
+            "subject": "Email Verification - SMARRTIF AI",
+            "text": f"Hello!\n\nYour verification code for Smarrtif AI Skills Assessment Platform is: {otp}\n\nThis code will expire in 10 minutes.\n\nBest regards,\nSmarrtif AI Team"
+        })
+
+        print(f"[SUCCESS] OTP email sent to {email}")
         return True
-        
-    except Exception:
+
+    except Exception as e:
+        print(f"[ERROR] Email OTP failed: {e}")
         return False
 
-def send_sms_otp(phone, otp):
-    """Send OTP via SMS using multiple providers."""
-    # Try Fast2SMS first
-    if app.config.get('FAST2SMS_API_KEY'):
-        try:
-            import requests
-            url = "https://www.fast2sms.com/dev/bulkV2"
-            payload = {
-                'authorization': app.config['FAST2SMS_API_KEY'],
-                'variables_values': otp,
-                'route': 'otp',
-                'numbers': phone,
-            }
-            headers = {
-                'authorization': app.config['FAST2SMS_API_KEY'],
-                'Content-Type': "application/x-www-form-urlencoded"
-            }
-            response = requests.post(url, data=payload, headers=headers)
-            if response.status_code == 200 and response.json().get('return'):
-                print(f"[SUCCESS] SMS sent via Fast2SMS to: {phone}")
-                return True
-        except Exception as e:
-            print(f"[ERROR] Fast2SMS failed: {e}")
-    
-    # Fallback: Log OTP for development
-    print(f"[SMS FALLBACK] OTP for {phone}: {otp}")
-    return True  # Return True for development
+
+# Generic Email Function
+def send_email_with_resend(to_email, subject, text_content, html_content=None):
+    """Send email using Resend API."""
+    try:
+        resend.api_key = os.environ.get('RESEND_API_KEY')
+
+        email_data = {
+            "from": "contactus@smarrtifai.com",
+            "to": to_email,
+            "subject": subject,
+            "text": text_content
+        }
+
+        if html_content:
+            email_data["html"] = html_content
+
+        response = resend.Emails.send(email_data)
+        print(f"[SUCCESS] Email sent to {to_email} using Resend. ID: {response}")
+        return True
+
+    except Exception as e:
+        print(f"[ERROR] Resend email failed: {e}")
+        return False
+
+
+
+
 
 # MongoDB storage functions
 def get_user_id():
@@ -1440,8 +1429,8 @@ def upload_resume():
         # Clean up uploaded file
         try:
             os.remove(file_path)
-        except:
-            pass
+        except Exception as cleanup_error:
+            print(f"[WARNING] Failed to cleanup file: {cleanup_error}")
         
         print(f"[INFO] Redirecting to /take-assessment")
         return jsonify({'redirect': '/take-assessment'})
@@ -1536,13 +1525,91 @@ def payment_page():
         print(f"Error creating order: {str(e)}")
         return redirect(url_for('payment_failure_page'))
 
+def send_invoice_email_resend(user_email, user_name, payment_id, amount):
+    """Send invoice email after successful payment using Resend."""
+    subject = f"Payment Invoice - Smarrtif AI Skills Assessment Platform"
+    
+    text_content = f"""Dear {user_name},
+
+Thank you for your payment! Here are your transaction details:
+
+Payment ID: {payment_id}
+Amount: ₹{amount/100:.2f}
+Service: Career Consultation & Roadmap Service
+Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+Your personalized career roadmap is now available in your account.
+
+Best regards,
+Smarrtif AI Team"""
+    
+    html_content = f"""<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+        .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+        .header {{ background: #ef4444; color: white; padding: 20px; text-align: center; }}
+        .content {{ padding: 20px; background: #f9f9f9; }}
+        .invoice {{ background: white; padding: 20px; border-radius: 5px; margin: 20px 0; }}
+        .invoice-item {{ display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #eee; }}
+        .footer {{ text-align: center; padding: 20px; color: #666; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>SMARRTIF AI</h1>
+            <p>Payment Invoice</p>
+        </div>
+        <div class="content">
+            <h2>Dear {user_name},</h2>
+            <p>Thank you for your payment! Here are your transaction details:</p>
+            <div class="invoice">
+                <div class="invoice-item">
+                    <span><strong>Payment ID:</strong></span>
+                    <span>{payment_id}</span>
+                </div>
+                <div class="invoice-item">
+                    <span><strong>Amount:</strong></span>
+                    <span>₹{amount/100:.2f}</span>
+                </div>
+                <div class="invoice-item">
+                    <span><strong>Service:</strong></span>
+                    <span>Career Consultation & Roadmap Service</span>
+                </div>
+                <div class="invoice-item">
+                    <span><strong>Date:</strong></span>
+                    <span>{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</span>
+                </div>
+            </div>
+            <p>Your personalized career roadmap is now available in your account.</p>
+        </div>
+        <div class="footer">
+            <p>Best regards,<br>Smarrtif AI Team</p>
+        </div>
+    </div>
+</body>
+</html>"""
+    
+    return send_email_with_resend(user_email, subject, text_content, html_content)
+
 def send_invoice_email(user_email, user_name, payment_id, amount):
-    """Send invoice email after successful payment."""
+    """Send invoice email after successful payment - uses Resend as primary method."""
+    # Try Resend first
+    if send_invoice_email_resend(user_email, user_name, payment_id, amount):
+        return True
+    
+    # Fallback to SMTP if Resend fails
     try:
-        if not app.config['EMAIL_USER'] or not app.config['EMAIL_PASSWORD']:
-            print("[WARNING] Email credentials not configured")
+        if not app.config.get('EMAIL_USER') or not app.config.get('EMAIL_PASSWORD'):
+            print("[WARNING] SMTP email credentials not configured")
             return False
             
+        import smtplib
+        from email.mime.text import MIMEText
+        from email.mime.multipart import MIMEMultipart
+        
         # Create message
         msg = MIMEMultipart()
         msg['From'] = app.config['EMAIL_USER']
@@ -1551,19 +1618,19 @@ def send_invoice_email(user_email, user_name, payment_id, amount):
         
         # Email body
         body = f"""
-        Dear {user_name},
-        
-        Thank you for your payment! Here are your transaction details:
-        
-        Payment ID: {payment_id}
-        Amount: ₹{amount/100:.2f}
-        Service: Career Consultation & Roadmap Service
-        Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-        
-        Your personalized career roadmap is now available in your account.
-        
-        Best regards,
-        Smarrtif AI Team
+Dear {user_name},
+
+Thank you for your payment! Here are your transaction details:
+
+Payment ID: {payment_id}
+Amount: ₹{amount/100:.2f}
+Service: Career Consultation & Roadmap Service
+Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+Your personalized career roadmap is now available in your account.
+
+Best regards,
+Smarrtif AI Team
         """
         
         msg.attach(MIMEText(body, 'plain'))
@@ -1576,11 +1643,11 @@ def send_invoice_email(user_email, user_name, payment_id, amount):
         server.sendmail(app.config['EMAIL_USER'], user_email, text)
         server.quit()
         
-        print(f"[SUCCESS] Invoice email sent to: {user_email}")
+        print(f"[SUCCESS] Invoice email sent via SMTP to: {user_email}")
         return True
         
     except Exception as e:
-        print(f"[ERROR] Failed to send invoice email: {e}")
+        print(f"[ERROR] Failed to send invoice email via SMTP: {e}")
         return False
 
 def generate_and_store_calendly_link():
@@ -1960,23 +2027,17 @@ def api_signup():
             
         name = data.get('name', '').strip()
         email = data.get('email', '').lower().strip()
-        mobile = data.get('mobile', '').strip()
         password = data.get('password', '')
         
-        if not name or not email or not mobile or not password:
-            return jsonify({'success': False, 'message': 'All fields are required'}), 400
-            
-        if len(mobile) != 10 or not mobile.isdigit():
-            return jsonify({'success': False, 'message': 'Please enter a valid 10-digit mobile number'}), 400
+        if not name or not email or not password:
+            return jsonify({'success': False, 'message': 'Name, email and password are required'}), 400
             
         if len(password) < 6:
             return jsonify({'success': False, 'message': 'Password must be at least 6 characters'}), 400
         
-        # Check email verification only
-        email_verified = session.get('email_verified', False)
-        
-        if not email_verified:
-            return jsonify({'success': False, 'message': 'Please verify your email first', 'require_verification': 'email'}), 400
+        # Check email verification
+        if not session.get('email_verified'):
+            return jsonify({'success': False, 'message': 'Please verify your email first', 'require_verification': True}), 400
         
         if users_collection is None:
             return jsonify({'success': False, 'message': 'Database unavailable'}), 503
@@ -1988,9 +2049,7 @@ def api_signup():
         user_data = {
             'name': name,
             'email': email,
-            'mobile': mobile,
             'password': generate_password_hash(password),
-            'email_verified': True,
             'created_at': datetime.utcnow(),
             'last_login': None
         }
@@ -2025,76 +2084,63 @@ def send_otp():
     """Send OTP for email verification."""
     try:
         data = request.json
-        if not data:
-            return jsonify({'success': False, 'message': 'No data provided'}), 400
-            
         email = data.get('email', '').lower().strip()
-        verification_type = data.get('type', 'email')
         
-        if verification_type != 'email' or not email:
-            return jsonify({'success': False, 'message': 'Valid email required'}), 400
+        if not email:
+            return jsonify({'success': False, 'message': 'Email required'}), 400
         
         otp = generate_otp()
         expiry_timestamp = (datetime.utcnow() + timedelta(minutes=10)).timestamp()
         
         # Store OTP in session
-        session[f'otp_{verification_type}'] = otp
-        session[f'otp_{verification_type}_expiry'] = expiry_timestamp
-        session[f'otp_{verification_type}_target'] = email
+        session['otp_email'] = otp
+        session['otp_email_expiry'] = expiry_timestamp
+        session['otp_email_target'] = email
         
         # Send email OTP
-        email_sent = send_email_otp(email, otp)
-        
-        if email_sent:
-            return jsonify({
-                'success': True, 
-                'message': 'OTP sent to your email'
-            })
+        if send_email_otp(email, otp):
+            return jsonify({'success': True, 'message': 'OTP sent to your email'})
         else:
-            return jsonify({
-                'success': False, 
-                'message': 'Failed to send OTP. Please try again.'
-            }), 500
+            return jsonify({'success': False, 'message': 'Failed to send OTP'}), 500
         
     except Exception as e:
         print(f"[ERROR] Send OTP error: {e}")
-        return jsonify({'success': False, 'message': 'Service temporarily unavailable'}), 500
+        return jsonify({'success': False, 'message': 'Service unavailable'}), 500
 
 @app.route('/api/auth/verify-otp', methods=['POST'])
 def verify_otp():
-    """Verify OTP for email only."""
+    """Verify OTP for email."""
     data = request.json
     otp = data.get('otp', '').strip()
-    verification_type = data.get('type', 'email')
-    
-    if verification_type != 'email':
-        return jsonify({'success': False, 'message': 'Only email verification supported'}), 400
     
     if not otp:
         return jsonify({'success': False, 'message': 'OTP required'}), 400
     
-    stored_otp = session.get(f'otp_{verification_type}')
-    expiry_timestamp = session.get(f'otp_{verification_type}_expiry')
+    stored_otp = session.get('otp_email')
+    expiry_timestamp = session.get('otp_email_expiry')
     
     if not stored_otp or not expiry_timestamp:
         return jsonify({'success': False, 'message': 'No OTP found. Please request a new one.'}), 400
     
-    # Compare timestamps
-    current_timestamp = datetime.utcnow().timestamp()
-    if current_timestamp > expiry_timestamp:
+    # Check expiry
+    if datetime.utcnow().timestamp() > expiry_timestamp:
         return jsonify({'success': False, 'message': 'OTP expired. Please request a new one.'}), 400
     
     if otp != stored_otp:
         return jsonify({'success': False, 'message': 'Invalid OTP'}), 400
     
     # Mark as verified
-    session[f'{verification_type}_verified'] = True
+    session['email_verified'] = True
     
     # Clean up OTP data
-    session.pop(f'otp_{verification_type}', None)
-    session.pop(f'otp_{verification_type}_expiry', None)
+    session.pop('otp_email', None)
+    session.pop('otp_email_expiry', None)
     
-    return jsonify({'success': True, 'message': f'{verification_type.title()} verified successfully'})
+    return jsonify({'success': True, 'message': 'Email verified successfully'})
+
+
+
+
 
 @app.route('/api/auth/forgot-password', methods=['POST'])
 def forgot_password():
@@ -2195,6 +2241,33 @@ def schedule_meeting():
     """Schedule a meeting with a mentor."""
     default_url = "https://calendly.com/diekshapriyaamishra-smarrtifai/smarrtif-ai-services-discussion"
     return jsonify({'scheduling_url': default_url})
+
+@app.route('/api/test-email', methods=['POST'])
+def test_email():
+    """Test endpoint for Resend email functionality."""
+    data = request.json
+    email = data.get('email', 'diekshapriyaamishra@smarrtifai.com')
+    email_type = data.get('type', 'otp')
+    
+    try:
+        if email_type == 'otp':
+            test_otp = generate_otp()
+            success = send_email_otp(email, test_otp)
+            return jsonify({
+                'success': success,
+                'message': f'Test OTP {test_otp} sent to {email}' if success else 'Failed to send email'
+            })
+        elif email_type == 'invoice':
+            success = send_invoice_email_resend(email, 'Test User', 'TEST_PAYMENT_123', 99900)
+            return jsonify({
+                'success': success,
+                'message': f'Test invoice email sent to {email}' if success else 'Failed to send email'
+            })
+        else:
+            return jsonify({'success': False, 'message': 'Invalid email type'}), 400
+            
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
 
 
 
