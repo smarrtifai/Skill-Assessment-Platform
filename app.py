@@ -33,18 +33,15 @@ class Config:
     UPLOAD_FOLDER = 'uploads'
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB
     TEST_DURATION = 1800  # 30 minutes
-    RAZORPAY_KEY_ID = os.environ.get('RAZORPAY_KEY_ID', 'rzp_test_6QHUKOTfZxR1DF')
-    RAZORPAY_KEY_SECRET = os.environ.get('RAZORPAY_KEY_SECRET', 'YOUR_KEY_SECRET')
-    CALENDLY_API_KEY = os.environ.get('CALENDLY_API_KEY', 'YOUR_CALENDLY_API_KEY')
+    RAZORPAY_KEY_ID = os.environ.get('RAZORPAY_KEY_ID')
+    RAZORPAY_KEY_SECRET = os.environ.get('RAZORPAY_KEY_SECRET')
+    CALENDLY_API_KEY = os.environ.get('CALENDLY_API_KEY')
     PAYMENT_MODE = os.environ.get('PAYMENT_MODE', 'live')
-    GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', 'AIzaSyB7JLNTFWY_Q5EFt-8J8kQDZ-UVNDpDZBY')
-    MONGODB_URI = os.environ.get('MONGODB_URI', 'mongodb://localhost:27017/')
+    GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
+    MONGODB_URI = os.environ.get('MONGODB_URI')
     DB_NAME = os.environ.get('DB_NAME', 'skills_assessment')
-    RESEND_API_KEY = os.environ.get('RESEND_API_KEY', 're_R8pgsGgD_5wgvt6jkpg6Thea3YBhhxhcE')
-    TWILIO_ACCOUNT_SID = os.environ.get('TWILIO_ACCOUNT_SID', '')
-    TWILIO_AUTH_TOKEN = os.environ.get('TWILIO_AUTH_TOKEN', '')
-    TWILIO_PHONE_NUMBER = os.environ.get('TWILIO_PHONE_NUMBER', '')
-    FAST2SMS_API_KEY = os.environ.get('FAST2SMS_API_KEY', '')
+    RESEND_API_KEY = os.environ.get('RESEND_API_KEY')
+    
 
 # Initialize Flask App
 app = Flask(__name__, static_folder='static')
@@ -171,8 +168,9 @@ except Exception:
     pass
 
 try:
-    # Use the original working URI temporarily
-    uri = "mongodb+srv://smarrtifai_db_user:NPz75GhLTwm3dLQ8@cluster0.lzwqox9.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+    uri = os.environ.get('MONGODB_URI')
+    if not uri:
+        raise ValueError("MONGODB_URI not found in environment variables")
     mongo_client = MongoClient(uri)
     db = mongo_client.skills_assessment
     users_collection = db.users
@@ -201,7 +199,12 @@ else:
     print("[WARNING] GROQ_API_KEY not found in environment")
 
 # Initialize Gemini Client
-genai.configure(api_key=app.config['GEMINI_API_KEY'])
+gemini_api_key = os.environ.get('GEMINI_API_KEY')
+if gemini_api_key:
+    genai.configure(api_key=gemini_api_key)
+    print("[SUCCESS] Gemini client initialized successfully")
+else:
+    print("[WARNING] GEMINI_API_KEY not found in environment")
 
 # Data Models for Non-Technical Skills Assessment
 NON_TECH_SKILLS_DATABASE = {
