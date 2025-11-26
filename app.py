@@ -46,6 +46,7 @@ class Config:
 # Initialize Flask App
 app = Flask(__name__, static_folder='static')
 app.config.from_object(Config)
+app.config["SERVER_NAME"] = "skillassessmentplatform.smarrtifai.com"
 app.secret_key = os.environ.get('SECRET_KEY', 'your-secret-key-here')
 
 # Session configuration
