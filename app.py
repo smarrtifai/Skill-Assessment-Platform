@@ -2146,43 +2146,82 @@ def verify_otp():
 
 
 
+def send_password_reset_email(email, reset_token):
+    """Send password reset email using Resend API."""
+    try:
+        import resend
+        resend.api_key = os.environ.get('RESEND_API_KEY')
+        
+        reset_link = f"https://skillassessmentplatform.smarrtifai.com/reset-password?token={reset_token}"
+        
+        r = resend.Emails.send({
+            "from": "contactus@smarrtifai.com",
+            "to": email,
+            "subject": "Password Reset - SMARRTIF AI",
+            "text": f"Hello!\n\nYou requested a password reset for your Smarrtif AI account.\n\nClick the link below to reset your password:\n{reset_link}\n\nThis link will expire in 1 hour.\n\nIf you didn't request this reset, please ignore this email.\n\nBest regards,\nSmarrtif AI Team"
+        })
+        
+        return True, reset_link
+        
+    except Exception as e:
+        print(f"[ERROR] Password reset email failed: {e}")
+        return False, None
+
 @app.route('/api/auth/forgot-password', methods=['POST'])
 def forgot_password():
     """Send password reset link."""
-    data = request.json
-    email = data.get('email', '').lower().strip()
-    
-    if not email:
-        return jsonify({'success': False, 'message': 'Email required'}), 400
-    
-    if users_collection is None:
-        return jsonify({'success': False, 'message': 'Database unavailable'}), 503
-    
-    user = users_collection.find_one({'email': email})
-    if not user:
-        return jsonify({'success': False, 'message': 'Email not found'}), 404
-    
-    # Generate reset token
-    reset_token = str(uuid.uuid4())
-    expiry_timestamp = (datetime.utcnow() + timedelta(hours=1)).timestamp()
-    
-    # Store reset token in database
-    users_collection.update_one(
-        {'email': email},
-        {'$set': {
-            'reset_token': reset_token,
-            'reset_token_expiry': expiry_timestamp
-        }}
-    )
-    
-    # Generate reset link
-    reset_link = f"http://localhost:5000/reset-password?token={reset_token}"
-    
-    return jsonify({
-        'success': True, 
-        'message': 'Password reset link generated',
-        'reset_link': reset_link
-    })
+    try:
+        data = request.json
+        if not data:
+            return jsonify({'success': False, 'message': 'No data provided'}), 400
+            
+        email = data.get('email', '').lower().strip()
+        print(f"[DEBUG] Forgot password request for: {email}")
+        
+        if not email:
+            return jsonify({'success': False, 'message': 'Email required'}), 400
+        
+        if users_collection is None:
+            print(f"[ERROR] Database unavailable")
+            return jsonify({'success': False, 'message': 'Database unavailable'}), 503
+        
+        user = users_collection.find_one({'email': email})
+        if not user:
+            print(f"[ERROR] User not found: {email}")
+            return jsonify({'success': False, 'message': 'Email not found'}), 404
+        
+        print(f"[DEBUG] User found, generating reset token")
+        # Generate reset token
+        reset_token = str(uuid.uuid4())
+        expiry_timestamp = (datetime.utcnow() + timedelta(hours=1)).timestamp()
+        
+        # Store reset token in database
+        users_collection.update_one(
+            {'email': email},
+            {'$set': {
+                'reset_token': reset_token,
+                'reset_token_expiry': expiry_timestamp
+            }}
+        )
+        print(f"[DEBUG] Reset token stored in database")
+        
+        # Send password reset email
+        success, reset_link = send_password_reset_email(email, reset_token)
+        print(f"[DEBUG] Email send result: {success}")
+        
+        if success:
+            return jsonify({
+                'success': True, 
+                'message': 'Password reset link sent to your email',
+                'reset_link': reset_link
+            })
+        else:
+            return jsonify({'success': False, 'message': 'Failed to send reset email'}), 500
+            
+    except Exception as e:
+        print(f"[ERROR] Forgot password error: {e}")
+        traceback.print_exc()
+        return jsonify({'success': False, 'message': f'Server error: {str(e)}'}), 500
 
 @app.route('/reset-password')
 def reset_password_page():
